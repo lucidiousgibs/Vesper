@@ -21,7 +21,17 @@
  * doesn't publish an exact decay-rate constant anywhere - rather than guess
  * one, this planner assumes the whole route is flown back-to-back with no
  * waiting, which is also the honest worst case for total trip time.
+ *
+ * planAutoRoute is the one exception to "pure client-side math" above - it
+ * turns (origin, destination, range, avoid-list) into an ordered waypoint
+ * sequence via a new Rust A* search (capital_route.rs) over every system's
+ * real position, since that needs the whole universe's worth of positions
+ * and a spatial index, not just the already-known waypoints this file's own
+ * math works from. Its output feeds straight into the unmodified
+ * planCapitalRoute below for the actual fuel/fatigue evaluation.
  */
+
+import { invoke } from "@tauri-apps/api/core";
 
 export const METERS_PER_LY = 9.4607e15;
 
@@ -68,11 +78,70 @@ export interface CapitalRoutePlan {
   anyLegOutOfRange: boolean;
 }
 
+/** Ordered jump-drive waypoints found by the Rust A* search (see
+ * capital_route.rs) between origin and destination, respecting rangeLy and
+ * the hard high-sec jump-drive restriction - never a planning suggestion the
+ * frontend needs to double check, that filter is non-togglable on the Rust
+ * side. avoidIds lets the caller route around specific systems (e.g. a known
+ * camp) without them ever entering the search graph at all. Throws (via
+ * invoke's own rejection) with a human-readable reason when no path exists -
+ * range too short, origin/destination not jump-drive legal, or every path
+ * blocked by the avoid list. */
+export function planAutoRoute(
+  originId: number,
+  destinationId: number,
+  rangeLy: number,
+  avoidIds: number[] = [],
+): Promise<RoutePosition[]> {
+  return invoke<{ system_id: number; system_name: string; x: number; y: number; z: number }[]>("plan_auto_capital_route", {
+    originId,
+    destinationId,
+    rangeLy,
+    avoidIds,
+  }).then((nodes) => nodes.map((n) => ({ systemId: n.system_id, systemName: n.system_name, pos: [n.x, n.y, n.z] })));
+}
+
 export function distanceLy(a: [number, number, number], b: [number, number, number]): number {
   const dx = a[0] - b[0];
   const dy = a[1] - b[1];
   const dz = a[2] - b[2];
   return Math.sqrt(dx * dx + dy * dy + dz * dz) / METERS_PER_LY;
+}
+
+/** Max effective jump range per hull class at Jump Drive Calibration V (the
+ * +100% bracket, matching this file's own effectiveRangeLy formula at
+ * jdcLevel=5) - values taken directly from SMT's own published reference
+ * (RegionControl.xaml's Ctx_Super/Ctx_Carrier/etc menu), the EVE community's
+ * de facto standard for this bracket list. Deliberately not account-specific
+ * (unlike planCapitalRoute's own per-character skill lookup) - this is a
+ * quick "what can this hull class reach from here" map overlay, not a route
+ * plan, so a fixed max-skill baseline per the plan's own scoping is enough. */
+export const CAPITAL_JUMP_RANGE_CLASSES: { label: string; rangeLy: number }[] = [
+  { label: "Super/Titan", rangeLy: 6.0 },
+  { label: "Dread/Carrier/FAX", rangeLy: 7.0 },
+  { label: "Command Carrier", rangeLy: 7.5 },
+  { label: "Black Ops", rangeLy: 8.0 },
+  { label: "Rorqual/JF", rangeLy: 10.0 },
+];
+
+/** Every system within rangeLy of originId, by real 3D distance - NOT the
+ * canvas's own x/y, which are a stylized, non-distance-preserving layout
+ * (see MapSystem's own doc comment). Returns a highlighted-system-set rather
+ * than a literal circle for exactly that reason - a circle drawn against the
+ * canvas's projection would include/exclude the wrong systems. */
+export function systemsWithinLy(
+  originId: number,
+  rangeLy: number,
+  positions: Map<number, [number, number, number]>,
+): Set<number> {
+  const origin = positions.get(originId);
+  const result = new Set<number>();
+  if (!origin) return result;
+  for (const [systemId, pos] of positions) {
+    if (systemId === originId) continue;
+    if (distanceLy(origin, pos) <= rangeLy) result.add(systemId);
+  }
+  return result;
 }
 
 export function planCapitalRoute(

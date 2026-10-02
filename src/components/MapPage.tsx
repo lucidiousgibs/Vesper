@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Map as MapIcon } from "lucide-react";
+import { Map as MapIcon, Minimize2 } from "lucide-react";
 import MapView from "./MapView";
 import type { MapSystem } from "../lib/map";
 import PageTabBar from "./PageTabBar";
@@ -61,6 +61,10 @@ function MapPage({
   // this up, pre-fills its waypoint slots, auto-runs the check, then
   // consumes it (one-shot, same pattern as initialTab above).
   const [pendingGateCheckWaypoints, setPendingGateCheckWaypoints] = useState<MapSystem[] | null>(null);
+  // Set once Gate Check's "Push Route to EVE Online" succeeds - handed to
+  // MapView so it can draw that exact route, overriding its own plain
+  // current-location-to-destination line until the banner's X clears it.
+  const [pushedRoute, setPushedRoute] = useState<{ id: number; name: string }[] | null>(null);
   // Covers the whole app window (sidebar, top bar, this page's own header
   // and tab bar) with just the map itself when true - see the render below
   // and .map-fullscreen-overlay in App.css.
@@ -87,7 +91,9 @@ function MapPage({
   // resetting its zoom/pan/selection state right when a seamless resize is
   // the entire point.
   return (
-    <main className={`main main-map${isFullscreen ? " main-map-fullscreen" : ""}`}>
+    <main
+      className={`main main-map${isFullscreen ? " main-map-fullscreen" : ""}${isFullscreen && tab !== "map" ? " main-map-fullscreen-other-tab" : ""}`}
+    >
       <div className={`map-page-shell${tab === "map" ? " map-page-shell-map" : ""}`}>
         <div className={`map-page-header${isFullscreen ? " map-page-header-hidden" : ""}`}>
           <div>
@@ -110,6 +116,19 @@ function MapPage({
           className={`map-page-tabs${isFullscreen ? " map-page-tabs-hidden" : ""}`}
         />
 
+        {/* Fullscreen hides this page's own header and tab bar (see the
+           main-map-fullscreen/-hidden classes above) so the Map tab reads as
+           a true fullscreen view - but that leaves no way back once "Send
+           Route to Gate Check" switches tab away from Map, since the only
+           other exit control lives inside MapView's own toolbar, which isn't
+           rendered on any other tab. This is the escape hatch for every tab
+           except Map, which already has its own exit button. */}
+        {isFullscreen && tab !== "map" && (
+          <button type="button" className="map-fullscreen-escape" onClick={() => setIsFullscreen(false)} title="Exit fullscreen">
+            <Minimize2 size={14} strokeWidth={2} /> Exit Fullscreen
+          </button>
+        )}
+
         {tab === "map" ? (
           <MapView
             onSelectKill={onSelectKill}
@@ -121,6 +140,8 @@ function MapPage({
             }}
             isFullscreen={isFullscreen}
             onToggleFullscreen={() => setIsFullscreen((v) => !v)}
+            pushedRoute={pushedRoute}
+            onClearPushedRoute={() => setPushedRoute(null)}
           />
         ) : tab === "gatecheck" ? (
           <GateCheck
@@ -128,6 +149,8 @@ function MapPage({
             onSelectGate={onSelectGate}
             initialWaypoints={pendingGateCheckWaypoints}
             onConsumeInitialWaypoints={() => setPendingGateCheckWaypoints(null)}
+            characters={characters}
+            onRoutePushed={setPushedRoute}
           />
         ) : tab === "likelycamps" ? (
           <LikelyGateCamps onSelectGate={onSelectGate} />

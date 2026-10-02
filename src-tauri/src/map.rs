@@ -803,6 +803,45 @@ pub async fn get_sov_structures(client: &reqwest::Client) -> Result<Vec<SovStruc
     Ok(result)
 }
 
+/// Shape confirmed against a live call to /sovereignty/campaigns/ rather
+/// than assumed from memory - ESI returns attackers_score (plural) and no
+/// enum restriction on event_type (observed "ihub_defense" live; "tcu_defense"
+/// and "station_defense" are the other documented values), so this is kept
+/// as a plain String rather than a closed Rust enum.
+#[derive(Deserialize, Serialize, Clone)]
+pub struct SovCampaign {
+    pub campaign_id: i64,
+    pub solar_system_id: i64,
+    pub constellation_id: i64,
+    pub structure_id: i64,
+    pub event_type: String,
+    pub defender_id: i64,
+    pub defender_score: f64,
+    pub attackers_score: f64,
+    pub start_time: String,
+}
+
+/// Live TCU/iHub/station attack-defense timers - distinct from
+/// get_sov_structures (ADM/vulnerability windows) above and from
+/// threats.rs's WarzoneCampaign (an unrelated FW-insurgency concept, not
+/// null-sec sovereignty). Shares the same `sovereignty` ESI rate-limit
+/// group as get_sov_structures/get_sovereignty_map, so this TTL matches
+/// theirs rather than opening new rate-limit exposure.
+static SOV_CAMPAIGNS_CACHE: LazyLock<Mutex<Option<(i64, Vec<SovCampaign>)>>> = LazyLock::new(|| Mutex::new(None));
+const SOV_CAMPAIGNS_CACHE_SECONDS: i64 = 120;
+
+pub async fn get_sov_campaigns(client: &reqwest::Client) -> Result<Vec<SovCampaign>, String> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    if let Some((cached_at, cached)) = SOV_CAMPAIGNS_CACHE.lock().unwrap().clone() {
+        if now - cached_at < SOV_CAMPAIGNS_CACHE_SECONDS {
+            return Ok(cached);
+        }
+    }
+    let result: Vec<SovCampaign> = esi::public_get(client, "/sovereignty/campaigns/").await?;
+    *SOV_CAMPAIGNS_CACHE.lock().unwrap() = Some((now, result.clone()));
+    Ok(result)
+}
+
 #[derive(Serialize, Clone)]
 pub struct SystemActivityCounts {
     pub system_id: i64,

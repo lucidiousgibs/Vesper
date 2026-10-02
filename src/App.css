@@ -8071,12 +8071,47 @@ img.fit-wheel-clickable:hover {
   background: var(--bg);
 }
 
+/* Fullscreen's zero padding above only suits the Map tab's own edge-to-edge
+   canvas - every other tab (Gate Check, Likely Gate Camps, Local Threat,
+   D-Scan) is ordinary padded page content that was never designed to butt
+   up against the viewport edge, and "Send Route to Gate Check" can switch
+   tab away from Map while fullscreen is still active. Restores the normal
+   gutter whenever that happens. */
+.main-map-fullscreen.main-map-fullscreen-other-tab {
+  padding: var(--space-xl);
+  overflow: auto;
+}
+
 /* !important: .map-page-header-with-activity also sets display (flex) at
    the same specificity and is defined later in this file, so without it
    that rule would win the tie and this element would never actually hide. */
 .map-page-header-hidden,
 .map-page-tabs-hidden {
   display: none !important;
+}
+
+.map-fullscreen-escape {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 501;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-family: var(--font-label);
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+.map-fullscreen-escape:hover {
+  background: var(--bg-elevated-2);
 }
 
 .map-page-shell {
@@ -8376,6 +8411,99 @@ img.fit-wheel-clickable:hover {
   cursor: pointer;
 }
 
+.map-filters-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.map-filters-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+}
+
+.map-filters-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  z-index: 151;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 240px;
+  padding: 8px;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.map-filters-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.map-filters-row:hover {
+  background: var(--bg-elevated-2);
+}
+
+.map-filters-row input[type="checkbox"] {
+  flex-shrink: 0;
+}
+
+.map-filters-select-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  cursor: default;
+}
+
+.map-filters-select-row span {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.map-filters-select-row select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated-2);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+}
+
+.map-filters-subrow {
+  margin-left: 14px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  border-top: 1px dashed var(--border);
+}
+
+.map-range-select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-family: var(--font-label);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .map-icons-toggle:hover {
   color: var(--text);
   border-color: var(--border-active);
@@ -8385,6 +8513,20 @@ img.fit-wheel-clickable:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+/* Dashed border + amber tint marks this as the flight-animation prototype,
+   not a finished feature - deliberately visually distinct from every other
+   button on this panel, same reasoning a construction-zone sign would use. */
+.map-test-flight-btn {
+  border-style: dashed !important;
+  border-color: var(--warning) !important;
+  color: var(--warning) !important;
+}
+
+.map-test-flight-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .map-selected-stats-btn {
@@ -9203,6 +9345,125 @@ img.fit-wheel-clickable:hover {
   width: 860px;
 }
 
+/* Jump Bridge Network manager - wider than the base .system-stats-modal so
+   the from/to system pickers and owner/notes fields don't feel cramped. */
+.jump-bridge-modal {
+  width: 640px;
+}
+
+.map-annotation-swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.map-ctx-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+}
+
+.map-ctx-menu {
+  position: fixed;
+  z-index: 151;
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+  padding: 4px;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.map-ctx-menu button {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-ctx-menu button:hover {
+  background: var(--bg-elevated-2);
+}
+
+.map-marker-draft {
+  gap: 8px;
+  padding: 10px;
+}
+
+.map-marker-draft input[type="text"] {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated-2);
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.map-marker-swatches {
+  display: flex;
+  gap: 6px;
+}
+
+.map-marker-swatch-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.map-marker-swatch-btn.map-marker-swatch-active {
+  border-color: var(--text);
+}
+
+.map-pending-line-banner {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 120;
+  padding: 7px 14px;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.map-pushed-route-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.map-pushed-route-banner button {
+  display: flex;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.map-pushed-route-banner button:hover {
+  color: var(--danger);
+}
+
 .ship-orders-modal .market-browser-books {
   grid-template-columns: 1fr 1fr;
 }
@@ -9576,6 +9837,26 @@ img.fit-wheel-clickable:hover {
   letter-spacing: 0.03em;
   font-family: var(--font-label);
   white-space: nowrap;
+}
+
+/* Same shape as .map-hover-kills - a second muted stat line, for the
+   sov structure's ADM/vulnerability-window status (only shown when the
+   Sov layer is on and the hovered system actually has a tracked structure). */
+.map-hover-sov-structure {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-family: var(--font-label);
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+/* An active attack is a more urgent stat than the plain ADM/vulnerability
+   line above it - warning-toned rather than muted, matching the orange ring
+   drawn around the same system on the map itself. */
+.map-hover-sov-campaign {
+  color: var(--warning);
+  font-weight: 600;
 }
 
 .map-hover-killboard {
@@ -10012,6 +10293,23 @@ img.fit-wheel-clickable:hover {
   margin: 4px 0 12px;
   color: var(--text-muted);
   font-size: 13.5px;
+}
+
+.gatecheck-autopilot-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 10px 0;
+}
+
+/* .gatecheck-check-button carries align-self: flex-start from its original
+   context (a column-flex form, where that means "don't stretch full width" -
+   in this row-flex context the same property instead pins it to the row's
+   top edge, fighting the align-items above). Overridden back to the row's
+   own alignment here specifically, rather than touching the shared class. */
+.gatecheck-autopilot-row .gatecheck-check-button {
+  align-self: flex-end;
 }
 
 .gatecheck-table-wrap {
@@ -15473,6 +15771,29 @@ label.settings-sync-file-row {
   background: var(--warning-soft);
   color: var(--warning);
   font-size: 12.5px;
+}
+
+.capital-route-danger {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+}
+
+.capital-route-danger .capital-route-warning {
+  padding: 0;
+  margin: 0 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.capital-route-danger-row {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
 }
 
 .capital-route-legs {

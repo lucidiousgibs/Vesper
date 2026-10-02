@@ -1,7 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, X, Crosshair, MapPin, BarChart3, RefreshCw, Radar, Maximize2, Minimize2, ChevronDown, Skull } from "lucide-react";
+import {
+  Search,
+  X,
+  Crosshair,
+  MapPin,
+  BarChart3,
+  RefreshCw,
+  Radar,
+  Maximize2,
+  Minimize2,
+  ChevronDown,
+  Skull,
+  Link2,
+  Pencil,
+  Rocket,
+} from "lucide-react";
 import SystemStatsPanel from "./SystemStatsPanel";
+import MapSignatureScratchpad from "./MapSignatureScratchpad";
+import MapJumpBridgePanel from "./MapJumpBridgePanel";
+import MapAnnotationsPanel from "./MapAnnotationsPanel";
 import { useTrackedEntities } from "../hooks/useTrackedEntities";
+import { useJumpBridges, type JumpBridgeEntry } from "../hooks/useJumpBridges";
+import { useMapAnnotations, type MapMarker, type MapLine } from "../hooks/useMapAnnotations";
 import {
   getMapData,
   getCharacterHomeSystems,
@@ -10,6 +30,9 @@ import {
   getSovereigntyMap,
   getIncursions,
   getSystemActivity,
+  getSovStructures,
+  isSovVulnerableNow,
+  getSovCampaigns,
   colorForId,
   type MapData,
   type MapSystem,
@@ -19,7 +42,13 @@ import {
   type SovEntry,
   type IncursionSystem,
   type SystemActivityCounts,
+  type SovStructureStatus,
+  type SovCampaign,
+  getSystemPositions,
 } from "../lib/map";
+import { CAPITAL_JUMP_RANGE_CLASSES, systemsWithinLy } from "../lib/capitalRoute";
+import { buildRegionCells } from "../lib/voronoi";
+import { getScoutConnections, type ScoutConnection } from "../lib/scout";
 import { useErrorReporter } from "../hooks/useErrorReporter";
 import {
   securityColor,
@@ -38,7 +67,8 @@ import { useMapDisplayPrefs } from "../hooks/useMapDisplayPrefs";
 import { RADIUS_OPTIONS, radiusTitle } from "./TopBar";
 import { getSystemKillHeat, type KillEntry, type SystemKillHeat } from "../lib/kills";
 import type { SystemSummary } from "./SystemKillboard";
-import { getCharacterLocation, type SessionCharacter } from "../lib/eve";
+import { getCharacterLocation, getCharacterContacts, type SessionCharacter, type ContactEntry } from "../lib/eve";
+import { matchContactStanding, standingTier } from "../lib/standings";
 import { resolveEntityNames } from "../lib/wars";
 import { THEME_CHANGE_EVENT, useTheme, isPremiumTheme } from "../hooks/useTheme";
 
@@ -117,6 +147,58 @@ function getDiscSprite(cache: Map<number, HTMLCanvasElement>, secTenth: number, 
   let sprite = cache.get(secTenth);
   if (!sprite) {
     sprite = buildDiscSprite(rgb);
+    cache.set(secTenth, sprite);
+  }
+  return sprite;
+}
+
+/** The five major NPC-station trade hubs (verified live via ESI's
+ * /universe/ids/ rather than assumed, since several of these names collide
+ * with an alliance/corporation of the same name in that same lookup) - the
+ * one handful of systems in all of New Eden that matter enough to earn a
+ * different base shape instead of a color/ring change, since "this is a
+ * trade hub" is a real, fixed, structural fact about the system, not just
+ * another data layer toggled on and off like everything else on this map. */
+const TRADE_HUB_SYSTEM_IDS = new Set([
+  30000142, // Jita
+  30002187, // Amarr
+  30002659, // Dodixie
+  30002510, // Rens
+  30002053, // Hek
+]);
+
+function diamondPath(c: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
+  c.beginPath();
+  c.moveTo(cx, cy - r);
+  c.lineTo(cx + r, cy);
+  c.lineTo(cx, cy + r);
+  c.lineTo(cx - r, cy);
+  c.closePath();
+}
+
+/** Same radial-gradient disc look as buildDiscSprite, just clipped to a
+ * diamond instead of a circle - trade hubs still get the same dim glassy
+ * fill and get caught by the same theme-change cache-clear, they just read
+ * as a different shape at a glance. */
+function buildDiamondDiscSprite(rgb: string): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = GLOW_SPRITE_SIZE;
+  canvas.height = GLOW_SPRITE_SIZE;
+  const c = canvas.getContext("2d")!;
+  const r = GLOW_SPRITE_SIZE / 2;
+  const gradient = c.createRadialGradient(r, r, 0, r, r, r);
+  gradient.addColorStop(0, `rgba(${rgb}, 0.1)`);
+  gradient.addColorStop(1, `rgba(${rgb}, 0.55)`);
+  c.fillStyle = gradient;
+  diamondPath(c, r, r, r);
+  c.fill();
+  return canvas;
+}
+
+function getDiamondDiscSprite(cache: Map<number, HTMLCanvasElement>, secTenth: number, rgb: string): HTMLCanvasElement {
+  let sprite = cache.get(secTenth);
+  if (!sprite) {
+    sprite = buildDiamondDiscSprite(rgb);
     cache.set(secTenth, sprite);
   }
   return sprite;
@@ -481,6 +563,51 @@ const NPC_COLOR_STOPS: [number, number, number, number][] = [
   [0.4, 170, 120, 20],
   [1, 255, 190, 40],
 ];
+
+/** Dim violet -> bright violet for the danger-zone (N-jumps-from-current-
+ * location) highlight - a hue none of the three heat modes above use, so a
+ * system that's both "hot" (recent kills) and "in my zone" (close to home)
+ * reads as two distinguishable signals rather than one blended color. */
+const DANGER_ZONE_COLOR_STOPS: [number, number, number, number][] = [
+  [0, 70, 40, 90],
+  [1, 190, 110, 255],
+];
+
+/** Fixed swatch choices for user-drawn markers/lines (see
+ * useMapAnnotations.ts) - picked to stay visually distinct from every other
+ * overlay's own fixed hue (scout/danger-zone violet, sov-campaign orange,
+ * jump-bridge cyan) so a freeform note never reads as one of those instead. */
+const ANNOTATION_COLORS = ["#e0685f", "#5fbf8a", "#e0a85c", "#e8edf2", "#e05fb0"];
+
+/** The live per-character flight animation (see the location-poll effect)
+ * skips playing a shortest-path flight between two consecutive polls once it
+ * gets this long - past this point it's almost certainly a relog, a jump
+ * clone, a wormhole hop ESI can't route through anyway, or simply too many
+ * real jumps inside one 30s poll window to sensibly animate, not a single
+ * continuous flight worth the many-minutes-long animation it would produce. */
+const LIVE_FLIGHT_MAX_JUMPS = 15;
+
+/** Fixed semantic ramp for the standings territory mode, indexed by
+ * standingTier()'s 0-4 bucket (Terrible..Excellent) - a hash color per
+ * alliance (colorForId, used by the plain sov territory mode) wouldn't mean
+ * anything here, since every system in the same tier should read as "the
+ * same kind of territory" regardless of which alliance actually holds it. */
+const STANDING_TIER_COLORS = ["#c94a3f", "#e0a85c", "#8d97a5", "#7fc97f", "#3fae6a"];
+
+/** Real 3D positions never change, so the whole universe's worth is fetched
+ * once per session and reused for every jump-range-sphere toggle/class
+ * switch after that, instead of re-querying on every 30s resync() the way
+ * every other (genuinely live) overlay does. Module-level rather than a ref
+ * so it survives a MapView remount (switching tabs away and back). */
+let allSystemPositionsCache: Promise<Map<number, [number, number, number]>> | null = null;
+function getAllSystemPositionsCached(systemIds: number[]): Promise<Map<number, [number, number, number]>> {
+  if (!allSystemPositionsCache) {
+    allSystemPositionsCache = getSystemPositions(systemIds).then(
+      (positions) => new Map(positions.map((p) => [p.system_id, [p.x, p.y, p.z] as [number, number, number]])),
+    );
+  }
+  return allSystemPositionsCache;
+}
 
 function heatColor(intensity: number, stops: [number, number, number, number][] = HEAT_COLOR_STOPS): [number, number, number] {
   let lo = stops[0];
@@ -1058,6 +1185,15 @@ interface MapViewProps {
    * drives the toolbar's expand/collapse icon and title. */
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  /** A route just pushed to a character's in-game autopilot from Gate Check
+   * (see GateCheck.tsx's "Push Route to EVE Online") - shown on the map
+   * using the exact same bold active-route line as a normal current-
+   * location-to-destination route, since it's the same kind of thing: the
+   * plan you're actually about to fly, just computed with Gate Check's own
+   * waypoint list and Shortest/Secure/Unsecure preference instead of the
+   * map's own plain two-point shortest path. */
+  pushedRoute?: { id: number; name: string }[] | null;
+  onClearPushedRoute?: () => void;
 }
 
 interface HoverInfo {
@@ -1071,6 +1207,31 @@ interface CharacterPin {
   image: HTMLImageElement | null;
 }
 
+/** One character's live location pin mid-animation between two systems - see
+ * startFlightAnimation. Prototype/test-only for now (triggered by the
+ * selected-system panel's "Test Flight" button, see its own comment), not
+ * yet wired to the real location poll below. */
+interface FlightAnimation {
+  character: SessionCharacter;
+  image: HTMLImageElement | null;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  startedAt: number;
+  durationMs: number;
+  /** System ids still to fly after the current leg's `to` - when this leg's
+   * duration elapses, pruneExpiredFlightAnimations advances to the next one
+   * (current `to` becomes the new `from`) instead of just deleting the
+   * animation, so a whole multi-hop route plays leg by leg. Empty for a
+   * plain single-hop test. */
+  remainingSystemIds: number[];
+}
+
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
 function MapView({
   onSelectKill,
   onSelectSystem,
@@ -1078,6 +1239,8 @@ function MapView({
   onSendRouteToGateCheck,
   isFullscreen,
   onToggleFullscreen,
+  pushedRoute,
+  onClearPushedRoute,
 }: MapViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pulseCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1122,6 +1285,7 @@ function MapView({
   const sovGatePathsRef = useRef<FocusGatePaths>(emptyFocusGatePaths());
   const incursionGatePathsRef = useRef<FocusGatePaths>(emptyFocusGatePaths());
   const discSpriteCacheRef = useRef<Map<number, HTMLCanvasElement>>(new Map());
+  const diamondDiscSpriteCacheRef = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const activeDiscSpriteCacheRef = useRef<Map<number, HTMLCanvasElement>>(new Map());
   // Not cleared on theme change like the two above - kill/traffic/NPC heat
   // colors are fixed constants (HEAT_COLOR_STOPS etc.), not theme-derived.
@@ -1168,16 +1332,80 @@ function MapView({
    * refreshes, rather than resolving one name per hover, so the tooltip
    * appears instantly instead of waiting on a fetch. */
   const sovNamesRef = useRef<Map<number, string>>(new Map());
+  /** ADM/vulnerability-window status per null-sec sov structure - fetched
+   * alongside sovRef (ownership) above but from a separate ESI endpoint
+   * (get_sov_structures), keyed by solar_system_id rather than system_id
+   * (the field name ESI itself uses for this endpoint specifically). */
+  const sovStructRef = useRef<Map<number, SovStructureStatus>>(new Map());
+  /** Active TCU/iHub/station attack-defense timers, keyed by the contested
+   * system (not campaign_id - a system is only ever in one active campaign
+   * at a time in practice, and keying by system matches how every other
+   * per-system overlay ref here is keyed). */
+  const sovCampaignsRef = useRef<Map<number, SovCampaign>>(new Map());
   /** Screen-space hit circles for every Sov ownership badge drawn on the
    * current frame, rebuilt each draw pass - same pattern as
    * renderedPinsRef, just for sov badges instead of character pins. */
   const renderedSovBadgesRef = useRef<{ px: number; py: number; radius: number; ownerId: number; kind: "alliance" | "corporation" }[]>([]);
   const showIncursionsRef = useRef(false);
   const incursionsRef = useRef<Map<number, IncursionSystem>>(new Map());
+  const showDangerZoneRef = useRef(false);
+  /** Mirrors useLocationTracking()'s own radiusSystemIds/jumpDistances (the
+   * same BFS already driving the ticker's proximity alerts) so the canvas
+   * draw loop - which never re-renders on React state - can read them
+   * without needing its own separate BFS. jumpDistances grades the
+   * highlight's intensity (closer = brighter); radiusSystemIds alone would
+   * only say in-or-out. */
+  const radiusSystemIdsRef = useRef<Set<number>>(new Set());
+  const jumpDistancesRef = useRef<Map<number, number>>(new Map());
+  const showScoutConnectionsRef = useRef(false);
+  /** Live Thera/Turnur wormhole connections (see getScoutConnections) -
+   * already built and rendered elsewhere (ScoutConnectionsPanel.tsx under
+   * the Wormholes tab); this just also draws them on the main map. */
+  const scoutConnectionsRef = useRef<ScoutConnection[]>([]);
+  const showJumpBridgesRef = useRef(false);
+  /** Manually-entered jump-bridge network (see useJumpBridges.ts) - no ESI
+   * data source exists for this at all, so it's mirrored into a ref the same
+   * way as every other overlay the draw loop reads. */
+  const jumpBridgesRef = useRef<JumpBridgeEntry[]>([]);
+  const showAnnotationsRef = useRef(false);
+  const markersRef = useRef<MapMarker[]>([]);
+  const linesRef = useRef<MapLine[]>([]);
+  /** Set while the user is mid-way through "Draw Line From Here" - the next
+   * left-click anywhere on the canvas completes the line to whatever system
+   * is under it instead of the usual select/pin behavior (see handleMouseUp
+   * below); a right-click or Escape cancels instead. */
+  const pendingLineFromRef = useRef<{ system: MapSystem; color: string; style: "solid" | "dashed" } | null>(null);
+  /** Systems reachable from the current location by the selected capital
+   * hull class's max jump range (see CAPITAL_JUMP_RANGE_CLASSES) - computed
+   * from real 3D positions, not the canvas's own non-distance-preserving
+   * x/y, same reasoning as radiusSystemIdsRef above. */
+  const jumpRangeSystemIdsRef = useRef<Set<number>>(new Set());
+  const showTerritoryRef = useRef(false);
+  /** Voronoi cell per null-sec-eligible system, in data-space (MapSystem's
+   * own x/y) - computed once from the static map layout (see voronoi.ts's
+   * own doc comment on why this never needs recomputing mid-session). */
+  const territoryCellsRef = useRef<Map<number, [number, number][]>>(new Map());
+  /** Owner id -> unioned territory Path2D, also data-space - rebuilt only
+   * when sov ownership actually changes (rebuildTerritoryPaths, called from
+   * resync's sov fetch), not per frame/pan/zoom. */
+  const territoryPathsRef = useRef<Map<number, Path2D>>(new Map());
+  const territoryModeRef = useRef<"sov" | "standings">("sov");
+  /** Contacts aggregated across every connected character (same convention
+   * as ContactsDirectory.tsx) - fetched once per resync, not per render. */
+  const contactsRef = useRef<ContactEntry[]>([]);
+  /** Standings-mode territory fill, keyed by standingTier()'s 0-4 bucket
+   * rather than a raw owner id - kept separate from territoryPathsRef (the
+   * sov-ownership version) since the two modes group systems by a
+   * completely different key and color scheme, never shown at once. */
+  const standingsTerritoryPathsRef = useRef<Map<number, Path2D>>(new Map());
   const heatModeRef = useRef<HeatMode>("kills");
   const activityRef = useRef<Map<number, SystemActivityCounts>>(new Map());
   const homePinsBySystemRef = useRef<Map<number, CharacterPin[]>>(new Map());
   const locationPinsBySystemRef = useRef<Map<number, CharacterPin[]>>(new Map());
+  /** Keyed by character id - a character in here is skipped from the normal
+   * snapped-to-system-dot location pin above and drawn mid-flight instead
+   * (see the post-loop render pass in draw() and startFlightAnimation). */
+  const flightAnimationsRef = useRef<Map<number, FlightAnimation>>(new Map());
   /** Screen-space hit boxes for every home/location pin drawn on the current
    * frame, rebuilt each draw pass - lets hover detection tell "over this
    * character's marker" apart from "over the system dot" without redoing
@@ -1252,6 +1480,7 @@ function MapView({
   const [results, setResults] = useState<MapSystem[]>([]);
   const [selectedSystem, setSelectedSystem] = useState<MapSystem | null>(null);
   const [statsSystemId, setStatsSystemId] = useState<number | null>(null);
+  const [scratchpadSystemId, setScratchpadSystemId] = useState<number | null>(null);
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
   /** Clicking a system pins its tooltip open at that screen position, so
    * the mini-killboard inside it can actually be clicked without the
@@ -1321,9 +1550,36 @@ function MapView({
     setShowSov,
     showIncursions,
     setShowIncursions,
+    showDangerZone,
+    setShowDangerZone,
+    showScoutConnections,
+    setShowScoutConnections,
+    showJumpBridges,
+    setShowJumpBridges,
+    showAnnotations,
+    setShowAnnotations,
+    showTerritory,
+    setShowTerritory,
+    territoryMode,
+    setTerritoryMode,
     heatMode,
     setHeatMode,
   } = useMapDisplayPrefs();
+  const [contactsNeedReauth, setContactsNeedReauth] = useState<string[]>([]);
+  const { bridges: jumpBridges } = useJumpBridges();
+  const [jumpBridgeManagerOpen, setJumpBridgeManagerOpen] = useState(false);
+  const { markers, addMarker, removeMarkerBySystem, lines, addLine } = useMapAnnotations();
+  const [annotationsManagerOpen, setAnnotationsManagerOpen] = useState(false);
+  const [filtersMenuOpen, setFiltersMenuOpen] = useState(false);
+  const [annotationMenu, setAnnotationMenu] = useState<{
+    clientX: number;
+    clientY: number;
+    system: MapSystem;
+    hasMarker: boolean;
+  } | null>(null);
+  const [markerDraft, setMarkerDraft] = useState<{ clientX: number; clientY: number; system: MapSystem } | null>(null);
+  const [pendingLineFrom, setPendingLineFrom] = useState<{ systemName: string } | null>(null);
+  const [jumpRangeClass, setJumpRangeClass] = useState<string>("off");
   // Ticks forward periodically purely to force the nearby-feed expiry check
   // below to re-run even when no new kill has arrived - otherwise a kill
   // sitting past PROXIMITY_EXPIRY_MS would only actually drop out of the
@@ -1345,6 +1601,7 @@ function MapView({
       // once the palette changes, so they're dropped and lazily rebuilt
       // from the freshly-resolved colors above on the next draw().
       discSpriteCacheRef.current.clear();
+      diamondDiscSpriteCacheRef.current.clear();
       activeDiscSpriteCacheRef.current.clear();
       requestDraw();
     }
@@ -1396,7 +1653,7 @@ function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kills]);
 
-  const { alertKillIds, currentSystem, setCurrentSystem, radius, setRadius } = useLocationTracking();
+  const { alertKillIds, currentSystem, setCurrentSystem, radius, setRadius, radiusSystemIds, jumpDistances } = useLocationTracking();
   // A tracked friend's own death belongs in the same "surface this above
   // everything else" box as a nearby kill, regardless of where in New Eden
   // it happened - see proximityTickerKills below, which folds this into the
@@ -1418,12 +1675,19 @@ function MapView({
   // loaded for rendering.
   const [destinationSystem, setDestinationSystem] = useState<MapSystem | null>(null);
   const route = useMemo(() => {
+    // A just-pushed Gate Check route wins outright - it's a real, already-
+    // computed waypoint list (possibly many stops, possibly avoiding
+    // systems, possibly Secure/Unsecure) that would be wrong to silently
+    // replace with this map's own plain two-point shortest path the moment
+    // both happen to be set. onClearPushedRoute (the small banner below) is
+    // the explicit way back to normal destination-routing.
+    if (pushedRoute && pushedRoute.length > 1) return pushedRoute.map((s) => s.id);
     if (!currentSystem || !destinationSystem) return [];
     return findShortestRoute(currentSystem.id, destinationSystem.id, adjacencyRef.current);
     // mapData (not adjacencyRef itself, which isn't reactive) signals when
     // adjacencyRef.current has actually been freshly populated.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSystem, destinationSystem, mapData]);
+  }, [currentSystem, destinationSystem, mapData, pushedRoute]);
   const routeRef = useRef<number[]>([]);
   useEffect(() => {
     routeRef.current = route;
@@ -1552,18 +1816,41 @@ function MapView({
       // reloading every poll - only a character whose system actually
       // changed (or is new) needs a fresh Image.
       const previous = locationPinsBySystemRef.current;
+      const previousSystemByCharacterId = new Map<number, number>();
+      for (const [systemId, pins] of previous) {
+        for (const pin of pins) previousSystemByCharacterId.set(pin.character.id, systemId);
+      }
       for (const [systemId, pins] of bySystem) {
         const previousPins = previous.get(systemId);
         for (const pin of pins) {
           const existing = previousPins?.find((p) => p.character.id === pin.character.id);
           if (existing?.image) {
             pin.image = existing.image;
-            continue;
+          } else {
+            const img = new Image();
+            img.onload = () => requestDraw();
+            img.src = pin.character.portrait_url;
+            pin.image = img;
           }
-          const img = new Image();
-          img.onload = () => requestDraw();
-          img.src = pin.character.portrait_url;
-          pin.image = img;
+          // The real thing this whole prototype was building toward: a
+          // character whose system actually changed since the last poll
+          // animates flying there live, with no route or destination needing
+          // to be set at all. "Best guess" gates, not literal ones - ESI only
+          // reports where a character is on this 30s cadence, never which
+          // gates they actually took, so this plays the shortest stargate
+          // path between the two systems actually observed. A gap bigger
+          // than LIVE_FLIGHT_MAX_JUMPS (a relog, a jump clone, a wormhole
+          // hop, or just too many real jumps happening inside one 30s window
+          // to sensibly animate) skips the animation entirely rather than
+          // playing an absurd minutes-long flight across half of New Eden.
+          const previousSystemId = previousSystemByCharacterId.get(pin.character.id);
+          if (previousSystemId != null && previousSystemId !== systemId) {
+            const path = findShortestRoute(previousSystemId, systemId, adjacencyRef.current);
+            const legs = path.length >= 2 ? path : [previousSystemId, systemId];
+            if (legs.length - 1 <= LIVE_FLIGHT_MAX_JUMPS) {
+              startRouteFlightAnimation(pin.character, pin.image, legs);
+            }
+          }
         }
       }
       locationPinsBySystemRef.current = bySystem;
@@ -1807,6 +2094,27 @@ function MapView({
     const focusActive = activeFocusPaths.length > 0;
     ctx.save();
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * translateX, dpr * translateY);
+
+    // Voronoi territory fill (see voronoi.ts/buildGroupedCellPaths) - drawn
+    // first, under the gate lines and system dots, using the same
+    // data-space-Path2D-plus-transform trick as gateBucketPathsRef so pan/
+    // zoom never requires rebuilding the (expensive-ish) union geometry.
+    // Rebuilt only when sov ownership actually changes (see
+    // rebuildTerritoryPaths, called from resync's sov fetch), never per frame.
+    if (showTerritoryRef.current && territoryModeRef.current === "sov" && territoryPathsRef.current.size > 0) {
+      ctx.globalAlpha = 0.22;
+      for (const [ownerId, path] of territoryPathsRef.current) {
+        ctx.fillStyle = colorForId(ownerId);
+        ctx.fill(path);
+      }
+    } else if (showTerritoryRef.current && territoryModeRef.current === "standings" && standingsTerritoryPathsRef.current.size > 0) {
+      ctx.globalAlpha = 0.22;
+      for (const [tier, path] of standingsTerritoryPathsRef.current) {
+        ctx.fillStyle = STANDING_TIER_COLORS[tier] ?? STANDING_TIER_COLORS[2];
+        ctx.fill(path);
+      }
+    }
+
     ctx.lineWidth = 1 / scale;
     ctx.setLineDash([]);
     ctx.globalAlpha = localLineAlpha;
@@ -1858,6 +2166,107 @@ function MapView({
       }
     }
     ctx.restore();
+
+    // EVE-Scout Thera/Turnur connections - dashed violet lines (matching the
+    // app's existing "wormhole = violet" convention, see --wormhole) from
+    // whichever of the two wormhole systems the connection is at, out to its
+    // real k-space destination. out_system_name only ever has two possible
+    // values (there are only two systems EVE-Scout tracks), so it's resolved
+    // once per distinct name rather than once per connection; in_system_id
+    // is already a real system id straight from the API.
+    if (showScoutConnectionsRef.current && scoutConnectionsRef.current.length > 0) {
+      const originByName = new Map<string, MapSystem>();
+      for (const conn of scoutConnectionsRef.current) {
+        if (originByName.has(conn.out_system_name)) continue;
+        for (const s of systemByIdRef.current.values()) {
+          if (s.name === conn.out_system_name) {
+            originByName.set(conn.out_system_name, s);
+            break;
+          }
+        }
+      }
+      ctx.save();
+      ctx.strokeStyle = "rgba(170, 110, 255, 0.6)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([2, 5]);
+      ctx.lineCap = "round";
+      for (const conn of scoutConnectionsRef.current) {
+        const originSystem = originByName.get(conn.out_system_name);
+        const destSystem = systemByIdRef.current.get(conn.in_system_id);
+        if (!originSystem || !destSystem) continue;
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(originSystem.x), toScreenY(originSystem.y));
+        ctx.lineTo(toScreenX(destSystem.x), toScreenY(destSystem.y));
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Manually-entered jump bridges - dashed cyan lines (deliberately a
+    // different hue/dash pattern from the violet/fine-dotted EVE-Scout lines
+    // above, per the plan's own note that these two overlays would otherwise
+    // visually collide) between whichever two systems the user recorded.
+    // Endpoints are resolved by id straight against systemByIdRef, same as
+    // every other overlay - a bridge pointing at an unknown/renamed system
+    // id is silently skipped rather than crashing the draw pass.
+    if (showJumpBridgesRef.current && jumpBridgesRef.current.length > 0) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(90, 200, 255, 0.65)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.lineCap = "round";
+      for (const bridge of jumpBridgesRef.current) {
+        const fromSystem = systemByIdRef.current.get(bridge.fromSystemId);
+        const toSystem = systemByIdRef.current.get(bridge.toSystemId);
+        if (!fromSystem || !toSystem) continue;
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(fromSystem.x), toScreenY(fromSystem.y));
+        ctx.lineTo(toScreenX(toSystem.x), toScreenY(toSystem.y));
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // FC-drawn annotations (see useMapAnnotations.ts) - deliberately simple,
+    // user-chosen color per marker/line rather than a fixed palette like
+    // every overlay above, since these are freeform intel notes, not a
+    // specific data source with its own established meaning.
+    if (showAnnotationsRef.current && linesRef.current.length > 0) {
+      for (const line of linesRef.current) {
+        const fromSystem = systemByIdRef.current.get(line.fromSystemId);
+        const toSystem = systemByIdRef.current.get(line.toSystemId);
+        if (!fromSystem || !toSystem) continue;
+        ctx.save();
+        ctx.strokeStyle = line.color;
+        ctx.lineWidth = 2;
+        ctx.setLineDash(line.style === "dashed" ? [5, 4] : []);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(fromSystem.x), toScreenY(fromSystem.y));
+        ctx.lineTo(toScreenX(toSystem.x), toScreenY(toSystem.y));
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    if (showAnnotationsRef.current && markersRef.current.length > 0) {
+      for (const marker of markersRef.current) {
+        const system = systemByIdRef.current.get(marker.systemId);
+        if (!system) continue;
+        const sx = toScreenX(system.x);
+        const sy = toScreenY(system.y);
+        ctx.save();
+        ctx.fillStyle = marker.color;
+        ctx.beginPath();
+        ctx.arc(sx - 8, sy - 8, 4, 0, Math.PI * 2);
+        ctx.fill();
+        if (marker.label) {
+          ctx.font = "600 11px Inter, sans-serif";
+          ctx.textAlign = "left";
+          ctx.fillText(marker.label, sx + 1, sy - 11);
+        }
+        ctx.restore();
+      }
+    }
 
     // Active route - the first piece of the map rewrite, independent of the
     // colored-vs-neutral connections debate: drawn as the single boldest
@@ -2094,13 +2503,20 @@ function MapView({
       // and scaled) instead of a fresh createRadialGradient per system per
       // frame - this was the one gradient the earlier glow-sprite pass
       // missed, and it ran for every visible node, not just glowing ones.
-      const discSprite = getDiscSprite(discSpriteCacheRef.current, spriteKey, secRgb);
+      const isTradeHub = TRADE_HUB_SYSTEM_IDS.has(system.id);
+      const discSprite = isTradeHub
+        ? getDiamondDiscSprite(diamondDiscSpriteCacheRef.current, spriteKey, secRgb)
+        : getDiscSprite(discSpriteCacheRef.current, spriteKey, secRgb);
       ctx.globalAlpha = dotAlpha;
       ctx.drawImage(discSprite, sx - baseRadius, sy - baseRadius, baseRadius * 2, baseRadius * 2);
       ctx.globalAlpha = 1;
 
-      ctx.beginPath();
-      ctx.arc(sx, sy, baseRadius, 0, Math.PI * 2);
+      if (isTradeHub) {
+        diamondPath(ctx, sx, sy, baseRadius);
+      } else {
+        ctx.beginPath();
+        ctx.arc(sx, sy, baseRadius, 0, Math.PI * 2);
+      }
       ctx.strokeStyle = secHex;
       ctx.globalAlpha = dotAlpha;
       ctx.lineWidth = isCurrentLocation ? 2 : 1.3;
@@ -2132,6 +2548,55 @@ function MapView({
         ctx.beginPath();
         ctx.arc(sx, sy, 17, 0, Math.PI * 2);
         ctx.strokeStyle = `rgba(${accentRgb}, 0.45)`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // Danger-zone highlight - every system within the alert radius
+      // useLocationTracking() already tracks for the ticker's proximity
+      // alerts (radiusSystemIdsRef/jumpDistancesRef), just not previously
+      // drawn on the map itself. Scales with baseRadius (unlike the fixed-
+      // pixel ticker-hover ring above) since potentially many systems carry
+      // this at once - a fixed-size ring per system would get noisy fast.
+      // Brightness falls off with jump distance so "right next to me" reads
+      // as clearly more urgent than "technically still in range".
+      // Active sov campaign (TCU/iHub/station under attack right now) - a
+      // deliberately plain, non-animated ring, not a pulse. Unlike the
+      // removed vulnerability-window ring (~20% of ALL null-sec structures
+      // at once, see the comment above), an actual active attack is a much
+      // rarer, genuinely noteworthy event, so a static highlight here
+      // doesn't risk the same "wall of rings" problem.
+      if (showSovRef.current) {
+        const campaign = sovCampaignsRef.current.get(system.id);
+        if (campaign) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, baseRadius + 5, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(255, 120, 60, 0.85)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+
+      if (showDangerZoneRef.current && radiusSystemIdsRef.current.has(system.id)) {
+        const dist = jumpDistancesRef.current.get(system.id) ?? 0;
+        const intensity = clamp(1 - dist * 0.2, 0.35, 1);
+        const [dzR, dzG, dzB] = heatColor(intensity, DANGER_ZONE_COLOR_STOPS);
+        ctx.beginPath();
+        ctx.arc(sx, sy, baseRadius + 3, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${dzR}, ${dzG}, ${dzB}, ${(0.35 + intensity * 0.45).toFixed(3)})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // Capital jump-range sphere - a flat green ring, not graded by distance
+      // the way the danger-zone ring above is, since range is a hard cutoff
+      // (in range or not) rather than something that fades with closeness.
+      // Drawn at a slightly bigger radius than the danger-zone ring so the
+      // two stay visually distinguishable on the rare system both include.
+      if (jumpRangeSystemIdsRef.current.has(system.id)) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, baseRadius + 6, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(120, 220, 120, 0.55)";
         ctx.lineWidth = 1.5;
         ctx.stroke();
       }
@@ -2272,12 +2737,34 @@ function MapView({
         let px = sx + dotRadius + portraitRadius + 3;
         const py = sy + dotRadius + portraitRadius + 3;
         for (const pin of locationPins) {
+          // Mid-flight characters (see startFlightAnimation) are drawn once,
+          // in the pass below, at their live interpolated position - not
+          // snapped here too, which would show them in both places at once.
+          if (flightAnimationsRef.current.has(pin.character.id)) continue;
           drawPortrait(ctx, px, py, portraitRadius, pin.image, inkColor);
           renderedPinsRef.current.push({ px, py, radius: portraitRadius, character: pin.character, kind: "location" });
           px += portraitRadius * 2 + 3;
         }
       }
 
+    }
+
+    // Flight-animation prototype (see startFlightAnimation's own comment) -
+    // every character currently mid-flight, drawn at an eased interpolation
+    // between its origin and destination system's real data-space position
+    // rather than snapped to either dot, same drawPortrait used for the
+    // normal location pin so it reads as "the same marker, just moving".
+    if (flightAnimationsRef.current.size > 0) {
+      const flightPortraitRadius = portraitRadiusForZoom(zoomRatio);
+      const now = performance.now();
+      for (const anim of flightAnimationsRef.current.values()) {
+        const progress = clamp((now - anim.startedAt) / anim.durationMs, 0, 1);
+        const eased = prefersReducedMotionRef.current ? 1 : easeInOutCubic(progress);
+        const px = toScreenX(anim.fromX + (anim.toX - anim.fromX) * eased);
+        const py = toScreenY(anim.fromY + (anim.toY - anim.fromY) * eased);
+        drawPortrait(ctx, px, py, flightPortraitRadius, anim.image, inkColor);
+        renderedPinsRef.current.push({ px, py, radius: flightPortraitRadius, character: anim.character, kind: "location" });
+      }
     }
     hasVisiblePulseRef.current = anyVisiblePulse;
 
@@ -2689,12 +3176,55 @@ function MapView({
    * to the full redraw for that one short, rare window costs nothing
    * meaningful next to how much cheaper the common (kill-pulse) case just
    * got. */
+  /** Advances or clears any flight animation (see startRouteFlightAnimation)
+   * past its own leg duration - a leg with more systems still queued moves
+   * on to the next one (its `to` becoming the new `from`) instead of being
+   * deleted, so a whole multi-hop route plays leg by leg on its own rather
+   * than needing to be re-triggered per hop. Called once per tick from
+   * pulseTick, regardless of which branch it takes, so a finished leg
+   * advances promptly instead of lingering until the next full draw(). */
+  function pruneExpiredFlightAnimations(): boolean {
+    if (flightAnimationsRef.current.size === 0) return false;
+    const now = performance.now();
+    for (const [id, anim] of flightAnimationsRef.current) {
+      if (now - anim.startedAt < anim.durationMs) continue;
+      const [nextSystemId, ...rest] = anim.remainingSystemIds;
+      const nextSystem = nextSystemId != null ? systemByIdRef.current.get(nextSystemId) : undefined;
+      if (nextSystem) {
+        flightAnimationsRef.current.set(id, {
+          ...anim,
+          fromX: anim.toX,
+          fromY: anim.toY,
+          toX: nextSystem.x,
+          toY: nextSystem.y,
+          startedAt: now,
+          remainingSystemIds: rest,
+        });
+      } else {
+        flightAnimationsRef.current.delete(id);
+      }
+    }
+    return flightAnimationsRef.current.size > 0;
+  }
+
   function pulseTick() {
-    if (selectedIdRef.current != null && !prefersReducedMotionRef.current && Date.now() - selectedAtRef.current < 150) {
+    const flightActive = pruneExpiredFlightAnimations();
+    if (
+      flightActive ||
+      (selectedIdRef.current != null && !prefersReducedMotionRef.current && Date.now() - selectedAtRef.current < 150)
+    ) {
       draw();
     } else {
       drawPulseOverlay();
     }
+  }
+
+  /** A flight animation in progress is its own reason to keep this whole
+   * loop alive, same weight as hasVisiblePulseRef's own kill-pulse check -
+   * neither loop-continuation check below cared about anything but kill
+   * pulses before this feature existed. */
+  function shouldKeepAnimating(): boolean {
+    return hasVisiblePulseRef.current || flightAnimationsRef.current.size > 0;
   }
 
   function ensureAnimating() {
@@ -2704,7 +3234,7 @@ function MapView({
         // Viewport-aware, not a universe-wide check - see
         // hasVisiblePulseRef's own comment for why that check almost never
         // returns false and was keeping this loop running near-permanently.
-        if (!hasVisiblePulseRef.current) {
+        if (!shouldKeepAnimating()) {
           window.clearInterval(animFrameRef.current!);
           animFrameRef.current = null;
         }
@@ -2723,7 +3253,7 @@ function MapView({
           lastPulseDrawAtRef.current = now;
           pulseTick();
         }
-        if (hasVisiblePulseRef.current) {
+        if (shouldKeepAnimating()) {
           rafPulseIdRef.current = requestAnimationFrame(tick);
         } else {
           rafPulseIdRef.current = null;
@@ -2731,6 +3261,40 @@ function MapView({
       };
       rafPulseIdRef.current = requestAnimationFrame(tick);
     }
+  }
+
+  /** Starts (or restarts, if this character was already mid-flight) a
+   * portrait-pin animation along every leg of systemIds in order, reusing
+   * the exact same focus-resilient dual-loop (ensureAnimating/pulseTick) the
+   * kill-pulse animation already relies on rather than a second bespoke
+   * requestAnimationFrame loop - see shouldKeepAnimating. Each leg plays for
+   * durationMs before pruneExpiredFlightAnimations advances to the next one
+   * on its own; a plain 2-element array is just a single hop. Prototype/
+   * test-only right now, triggered by the selected-system panel's "Test
+   * Flight" buttons; not yet wired to the real 30s location poll above. */
+  function startRouteFlightAnimation(
+    character: SessionCharacter,
+    image: HTMLImageElement | null,
+    systemIds: number[],
+    durationMs = 1800,
+  ) {
+    if (systemIds.length < 2) return;
+    const fromSystem = systemByIdRef.current.get(systemIds[0]);
+    const toSystem = systemByIdRef.current.get(systemIds[1]);
+    if (!fromSystem || !toSystem) return;
+    flightAnimationsRef.current.set(character.id, {
+      character,
+      image,
+      fromX: fromSystem.x,
+      fromY: fromSystem.y,
+      toX: toSystem.x,
+      toY: toSystem.y,
+      startedAt: performance.now(),
+      durationMs,
+      remainingSystemIds: systemIds.slice(2),
+    });
+    ensureAnimating();
+    requestDraw();
   }
 
   /** Rebuilds one "focus" filter's own line geometry (see fwGatePathsRef/
@@ -2752,6 +3316,86 @@ function MapView({
     const systemById = systemByIdRef.current;
     if (!data || systemById.size === 0) return;
     sovGatePathsRef.current = buildFocusGatePaths(systemById, data.jumps, (id) => hasSovOwner(sovRef.current.get(id)));
+  }
+
+  /** Groups the static per-system Voronoi cells (territoryCellsRef) by
+   * current sov owner and unions them into one Path2D per owner
+   * (territoryPathsRef) - the only part of item 10 that needs to track live
+   * data, called from resync's sov fetch right alongside rebuildSovGatePaths
+   * so both stay in sync on the same 30s cadence. */
+  /** Builds one Path2D per group key, by just appending each cell's own ring
+   * as its own closed subpath - no polygon union. A proper geometric union
+   * was tried first and had to be ripped back out: polygon-clipping's union()
+   * on a large null-sec alliance (some hold hundreds of systems) blocked the
+   * main thread badly enough to look like the app had crashed. A plain
+   * Voronoi diagram is already a strict partition of the plane - same-owner
+   * cells never overlap - so filling each one separately with the same solid
+   * color (no stroke) looks pixel-identical to a true union, just without
+   * the risk. */
+  function buildGroupedCellPaths(cells: Map<number, [number, number][]>, groupBySystemId: Map<number, number>): Map<number, Path2D> {
+    const paths = new Map<number, Path2D>();
+    for (const [systemId, ring] of cells) {
+      const groupKey = groupBySystemId.get(systemId);
+      if (groupKey === undefined) continue;
+      let path = paths.get(groupKey);
+      if (!path) {
+        path = new Path2D();
+        paths.set(groupKey, path);
+      }
+      ring.forEach(([x, y], i) => {
+        if (i === 0) path!.moveTo(x, y);
+        else path!.lineTo(x, y);
+      });
+      path.closePath();
+    }
+    return paths;
+  }
+
+  function rebuildTerritoryPaths() {
+    const cells = territoryCellsRef.current;
+    if (cells.size === 0) return;
+    try {
+      const ownerBySystemId = new Map<number, number>();
+      for (const systemId of cells.keys()) {
+        const sov = sovRef.current.get(systemId);
+        const ownerId = sov?.alliance_id ?? sov?.corporation_id;
+        if (ownerId != null) ownerBySystemId.set(systemId, ownerId);
+      }
+      territoryPathsRef.current = buildGroupedCellPaths(cells, ownerBySystemId);
+    } catch (err) {
+      reportError(`Territory overlay failed to update: ${String(err)}`);
+    }
+  }
+
+  /** Standings-mode counterpart to rebuildTerritoryPaths - same Voronoi
+   * cells, grouped by standingTier() (0-4) instead of raw owner id. A system
+   * whose owner doesn't resolve to any tier (no sov owner, or no contact
+   * entry matches it) is simply left out of ownerBySystemId, which
+   * buildGroupedCellPaths then just never fills - "no data" rendering as
+   * literally no fill, distinct from tier 2's grey Neutral fill. */
+  function rebuildStandingsTerritoryPaths() {
+    const cells = territoryCellsRef.current;
+    if (cells.size === 0 || contactsRef.current.length === 0) {
+      standingsTerritoryPathsRef.current = new Map();
+      return;
+    }
+    try {
+      const ownerBySystemId = new Map<number, number>();
+      for (const systemId of cells.keys()) {
+        const sov = sovRef.current.get(systemId);
+        if (!sov) continue;
+        const standing = matchContactStanding(contactsRef.current, {
+          characterId: null,
+          corporationId: sov.corporation_id,
+          allianceId: sov.alliance_id,
+        });
+        const tier = standingTier(standing);
+        if (tier !== null) ownerBySystemId.set(systemId, tier);
+      }
+      standingsTerritoryPathsRef.current = buildGroupedCellPaths(cells, ownerBySystemId);
+    } catch (err) {
+      reportError(`Standings territory overlay failed to update: ${String(err)}`);
+    }
   }
 
   function rebuildIncursionGatePaths() {
@@ -2818,6 +3462,8 @@ function MapView({
       .then((entries) => {
         sovRef.current = new Map(entries.map((e) => [e.system_id, e]));
         rebuildSovGatePaths();
+        rebuildTerritoryPaths();
+        rebuildStandingsTerritoryPaths();
         requestDraw();
 
         // Bulk-resolve every not-yet-cached owner's name in one call, so
@@ -2851,6 +3497,42 @@ function MapView({
         requestDraw();
       })
       .catch((err) => reportError(`Failed to load incursions: ${String(err)}`));
+    getSovStructures()
+      .then((structures) => {
+        sovStructRef.current = new Map(structures.map((s) => [s.solar_system_id, s]));
+        requestDraw();
+      })
+      .catch((err) => reportError(`Failed to load sovereignty structure status: ${String(err)}`));
+    getSovCampaigns()
+      .then((campaigns) => {
+        sovCampaignsRef.current = new Map(campaigns.map((c) => [c.solar_system_id, c]));
+        requestDraw();
+      })
+      .catch((err) => reportError(`Failed to load sovereignty campaigns: ${String(err)}`));
+    // Thera and Turnur are the only two systems EVE-Scout tracks - two calls,
+    // not a loop, since there will only ever be exactly these two. Failures
+    // are independent (one scout endpoint being down shouldn't blank the
+    // other), so each gets its own catch rather than a shared Promise.all.
+    Promise.all([
+      getScoutConnections("Thera").catch(() => [] as ScoutConnection[]),
+      getScoutConnections("Turnur").catch(() => [] as ScoutConnection[]),
+    ]).then(([thera, turnur]) => {
+      scoutConnectionsRef.current = [...thera, ...turnur];
+      requestDraw();
+    });
+    // Aggregated across every connected character, same convention as
+    // ContactsDirectory.tsx - the standings territory mode is a whole-
+    // account read on diplomatic posture, not one specific pilot's.
+    if (characters.length > 0) {
+      Promise.all(characters.map((c) => getCharacterContacts(c.id).catch(() => ({ entries: [], needs_reauth: false }))))
+        .then((results) => {
+          contactsRef.current = results.flatMap((r) => r.entries);
+          setContactsNeedReauth(characters.filter((_, i) => results[i].needs_reauth).map((c) => c.name));
+          rebuildStandingsTerritoryPaths();
+          if (showTerritoryRef.current && territoryModeRef.current === "standings") requestDraw();
+        })
+        .catch((err) => reportError(`Failed to load contacts for the standings territory overlay: ${String(err)}`));
+    }
     getSystemActivity()
       .then((entries) => {
         activityRef.current = new Map(entries.map((e) => [e.system_id, e]));
@@ -2933,6 +3615,130 @@ function MapView({
     requestDraw();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showIncursions]);
+
+  useEffect(() => {
+    showDangerZoneRef.current = showDangerZone;
+    requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDangerZone]);
+
+  // radiusSystemIds/jumpDistances get new Set/Map identities every time
+  // useLocationTracking's own BFS recomputes (moving to a new system,
+  // changing the alert radius) - mirror whichever is current into the refs
+  // the draw loop reads, and repaint immediately rather than waiting for
+  // some other unrelated redraw to pick up the change.
+  useEffect(() => {
+    radiusSystemIdsRef.current = radiusSystemIds;
+    jumpDistancesRef.current = jumpDistances;
+    if (showDangerZoneRef.current) requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [radiusSystemIds, jumpDistances]);
+
+  useEffect(() => {
+    showScoutConnectionsRef.current = showScoutConnections;
+    requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showScoutConnections]);
+
+  useEffect(() => {
+    showJumpBridgesRef.current = showJumpBridges;
+    requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showJumpBridges]);
+
+  useEffect(() => {
+    jumpBridgesRef.current = jumpBridges;
+    if (showJumpBridgesRef.current) requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpBridges]);
+
+  useEffect(() => {
+    showAnnotationsRef.current = showAnnotations;
+    requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAnnotations]);
+
+  useEffect(() => {
+    markersRef.current = markers;
+    if (showAnnotationsRef.current) requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markers]);
+
+  useEffect(() => {
+    linesRef.current = lines;
+    if (showAnnotationsRef.current) requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines]);
+
+  useEffect(() => {
+    showTerritoryRef.current = showTerritory;
+    requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showTerritory]);
+
+  useEffect(() => {
+    territoryModeRef.current = territoryMode;
+    requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [territoryMode]);
+
+  // The Voronoi triangulation only depends on the (static, never-changing
+  // mid-session) set of null-sec-eligible system positions, so it's built
+  // once here rather than inside resync()'s 30s cadence - see voronoi.ts's
+  // own doc comment. rebuildTerritoryPaths (the owner-union step, which DOES
+  // need to track live sov data) runs separately, from resync's sov fetch.
+  useEffect(() => {
+    if (!mapData) return;
+    const eligible = mapData.systems.filter(
+      (s) => securityBand(s.security) === "null" && !isWSpaceSystemName(s.name) && !isAbyssalSystemName(s.name),
+    );
+    if (eligible.length === 0) return;
+    try {
+      const pad = 50;
+      const xs = eligible.map((s) => s.x);
+      const ys = eligible.map((s) => s.y);
+      const bounds: [number, number, number, number] = [
+        Math.min(...xs) - pad,
+        Math.min(...ys) - pad,
+        Math.max(...xs) + pad,
+        Math.max(...ys) + pad,
+      ];
+      territoryCellsRef.current = buildRegionCells(eligible, bounds);
+      rebuildTerritoryPaths();
+      requestDraw();
+    } catch (err) {
+      // The territory overlay is a nice-to-have visualization, not core
+      // functionality - a triangulation edge case (degenerate/duplicate
+      // points) should never be allowed to take down the whole map, let
+      // alone the whole app (there's no error boundary anywhere above this).
+      reportError(`Territory overlay failed to build and has been disabled: ${String(err)}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapData]);
+
+  useEffect(() => {
+    if (jumpRangeClass === "off" || !currentSystem || !mapData) {
+      if (jumpRangeSystemIdsRef.current.size > 0) {
+        jumpRangeSystemIdsRef.current = new Set();
+        requestDraw();
+      }
+      return;
+    }
+    const rangeLy = CAPITAL_JUMP_RANGE_CLASSES.find((c) => c.label === jumpRangeClass)?.rangeLy;
+    if (!rangeLy) return;
+    let cancelled = false;
+    getAllSystemPositionsCached(mapData.systems.map((s) => s.id))
+      .then((positions) => {
+        if (cancelled) return;
+        jumpRangeSystemIdsRef.current = systemsWithinLy(currentSystem.id, rangeLy, positions);
+        requestDraw();
+      })
+      .catch((err) => reportError(`Failed to load system positions for the jump-range overlay: ${String(err)}`));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpRangeClass, currentSystem, mapData]);
 
   useEffect(() => {
     heatModeRef.current = heatMode;
@@ -3200,6 +4006,17 @@ function MapView({
         // "landed on an overlay drawn on top of it".
         const onCanvas = e.target === canvas;
         if (onCanvas) {
+          if (pendingLineFromRef.current) {
+            const pending = pendingLineFromRef.current;
+            pendingLineFromRef.current = null;
+            setPendingLineFrom(null);
+            const target = pickSystemForClick(e.clientX, e.clientY);
+            if (target && target.id !== pending.system.id) {
+              addLine({ id: pending.system.id, name: pending.system.name }, { id: target.id, name: target.name }, pending.color, pending.style);
+              setShowAnnotations(true);
+            }
+            return;
+          }
           const picked = pickSystemForClick(e.clientX, e.clientY);
           selectedIdRef.current = picked?.id ?? null;
           selectedAtRef.current = Date.now();
@@ -3217,8 +4034,27 @@ function MapView({
       }
     }
 
+    // Right-click opens the annotation menu (Add Marker / Draw Line) unless a
+    // line is already pending, in which case right-click just cancels it -
+    // keeps the gesture vocabulary small (no modifier keys, no drag-to-draw
+    // competing with the existing pan-drag on the same button).
+    function handleContextMenu(e: MouseEvent) {
+      if (e.target !== canvas) return;
+      e.preventDefault();
+      if (pendingLineFromRef.current) {
+        pendingLineFromRef.current = null;
+        setPendingLineFrom(null);
+        return;
+      }
+      const picked = pickSystemForClick(e.clientX, e.clientY);
+      if (!picked) return;
+      const hasMarker = markersRef.current.some((m) => m.systemId === picked.id);
+      setAnnotationMenu({ clientX: e.clientX, clientY: e.clientY, system: picked, hasMarker });
+    }
+
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     canvas.addEventListener("mousedown", handleMouseDown);
+    canvas.addEventListener("contextmenu", handleContextMenu);
     // No native canvas "mouseleave" listener: the mini-killboard tooltip
     // sits on top of the canvas with pointer-events re-enabled (so its
     // kill rows are clickable), and moving the cursor onto it would fire a
@@ -3234,6 +4070,7 @@ function MapView({
       resizeObserver.disconnect();
       canvas.removeEventListener("wheel", handleWheel);
       canvas.removeEventListener("mousedown", handleMouseDown);
+      canvas.removeEventListener("contextmenu", handleContextMenu);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
       window.removeEventListener("resize", requestDraw);
@@ -3556,54 +4393,140 @@ function MapView({
             </div>
 
             <div className="map-layer-toggles">
-              <button
-                type="button"
-                className={`map-icons-toggle${legendOpen ? " map-icons-toggle-active" : ""}`}
-                onClick={() => setLegendOpen((v) => !v)}
-                title={legendOpen ? "Hide the map key" : "Show the map key"}
-              >
-                Key
-              </button>
-              <button
-                type="button"
-                className={`map-icons-toggle${showServiceIcons ? " map-icons-toggle-active" : ""}`}
-                onClick={() => setShowServiceIcons((v) => !v)}
-                title="Toggle the station-service key icons shown under system names"
-              >
-                Icons
-              </button>
-              <button
-                type="button"
-                className={`map-icons-toggle${showFwContested ? " map-icons-toggle-active" : ""}`}
-                onClick={() => setShowFwContested((v) => !v)}
-                title="Ring any faction-warfare system that's actively contested (can flip to the occupying faction right now)"
-              >
-                FW
-              </button>
-              <button
-                type="button"
-                className={`map-icons-toggle${showSov ? " map-icons-toggle-active" : ""}`}
-                onClick={() => setShowSov((v) => !v)}
-                title="Show null-sec sovereignty ownership, tracked-alliance space, and structure vulnerability windows"
-              >
-                Sov
-              </button>
-              <button
-                type="button"
-                className={`map-icons-toggle${showIncursions ? " map-icons-toggle-active" : ""}`}
-                onClick={() => setShowIncursions((v) => !v)}
-                title="Ring every system currently infested by a live Sansha incursion"
-              >
-                Incursion
-              </button>
-              <button
-                type="button"
-                className="map-icons-toggle"
-                onClick={() => setHeatMode((m) => (m === "kills" ? "traffic" : m === "traffic" ? "npc" : "kills"))}
-                title="Cycle the background heat glow between last-hour Kills, Traffic (ship jumps), and NPC activity"
-              >
-                Heat: {heatMode === "kills" ? "Kills" : heatMode === "traffic" ? "Traffic" : "NPC"}
-              </button>
+              <div className="map-filters-wrap">
+                <button
+                  type="button"
+                  className={`map-icons-toggle${filtersMenuOpen ? " map-icons-toggle-active" : ""}`}
+                  onClick={() => setFiltersMenuOpen((v) => !v)}
+                  title="Map filters and overlays"
+                >
+                  Filters
+                  <ChevronDown size={14} strokeWidth={2} className={filtersMenuOpen ? "map-ticker-chevron-open" : undefined} />
+                </button>
+                {filtersMenuOpen && (
+                  <>
+                    <div className="map-filters-backdrop" onClick={() => setFiltersMenuOpen(false)} />
+                    <div className="map-filters-menu">
+                      <label className="map-filters-row" title={legendOpen ? "Hide the map key" : "Show the map key"}>
+                        <input type="checkbox" checked={legendOpen} onChange={(e) => setLegendOpen(e.target.checked)} />
+                        Map Legend
+                      </label>
+                      <label
+                        className="map-filters-row"
+                        title="Toggle the station-service key icons shown under system names"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={showServiceIcons}
+                          onChange={(e) => setShowServiceIcons(e.target.checked)}
+                        />
+                        Station Service Icons
+                      </label>
+                      <label
+                        className="map-filters-row"
+                        title="Ring any faction-warfare system that's actively contested (can flip to the occupying faction right now)"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={showFwContested}
+                          onChange={(e) => setShowFwContested(e.target.checked)}
+                        />
+                        Faction Warfare
+                      </label>
+                      <label
+                        className="map-filters-row"
+                        title="Show null-sec sovereignty ownership, tracked-alliance space, and structure vulnerability windows"
+                      >
+                        <input type="checkbox" checked={showSov} onChange={(e) => setShowSov(e.target.checked)} />
+                        Sovereignty
+                      </label>
+                      <label
+                        className="map-filters-row"
+                        title="Ring every system currently infested by a live Sansha incursion"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={showIncursions}
+                          onChange={(e) => setShowIncursions(e.target.checked)}
+                        />
+                        Incursions
+                      </label>
+                      <label
+                        className="map-filters-row"
+                        title="Ring every system within your tracked alert radius of your current location - set a current location and radius first (see Nearby & Tracked)"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={showDangerZone}
+                          onChange={(e) => setShowDangerZone(e.target.checked)}
+                        />
+                        Danger Zone
+                      </label>
+                      <label
+                        className="map-filters-row"
+                        title="Draw live Thera/Turnur wormhole connections from EVE-Scout"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={showScoutConnections}
+                          onChange={(e) => setShowScoutConnections(e.target.checked)}
+                        />
+                        EVE-Scout Connections
+                      </label>
+                      <label
+                        className="map-filters-row"
+                        title="Draw your manually-entered jump bridge network"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={showJumpBridges}
+                          onChange={(e) => setShowJumpBridges(e.target.checked)}
+                        />
+                        Jump Bridges
+                      </label>
+                      <label
+                        className="map-filters-row"
+                        title="Fill every null-sec system's Voronoi cell by its current sovereignty owner, for a region-at-a-glance territory map"
+                      >
+                        <input type="checkbox" checked={showTerritory} onChange={(e) => setShowTerritory(e.target.checked)} />
+                        Territory
+                      </label>
+                      {showTerritory && (
+                        <div className="map-filters-row map-filters-select-row map-filters-subrow">
+                          <span title="Sov: colored by owning alliance/corp. Standings: colored by your characters' contact standing toward that owner.">
+                            Territory Mode
+                          </span>
+                          <select value={territoryMode} onChange={(e) => setTerritoryMode(e.target.value as "sov" | "standings")}>
+                            <option value="sov">Sovereignty</option>
+                            <option value="standings">Standings</option>
+                          </select>
+                        </div>
+                      )}
+                      <div className="map-filters-row map-filters-select-row">
+                        <span title="Ring every system your current location's capital hull class can jump-drive to directly, at max skills">
+                          Capital Jump Range
+                        </span>
+                        <select value={jumpRangeClass} onChange={(e) => setJumpRangeClass(e.target.value)}>
+                          <option value="off">Off</option>
+                          {CAPITAL_JUMP_RANGE_CLASSES.map((c) => (
+                            <option key={c.label} value={c.label}>
+                              {c.label} ({c.rangeLy.toFixed(1)} LY)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="map-filters-row map-filters-select-row">
+                        <span title="Which last-hour aggregate the background heat glow reads from">Heat Map</span>
+                        <select value={heatMode} onChange={(e) => setHeatMode(e.target.value as "kills" | "traffic" | "npc")}>
+                          <option value="kills">Kills</option>
+                          <option value="traffic">Traffic</option>
+                          <option value="npc">NPC</option>
+                        </select>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Separate from the filter toggles above (pushed to the far
@@ -3631,6 +4554,30 @@ function MapView({
                   {isFullscreen ? <Minimize2 size={12} strokeWidth={2} /> : <Maximize2 size={12} strokeWidth={2} />}
                 </button>
               )}
+              <button
+                type="button"
+                className="map-icons-toggle"
+                onClick={() => setJumpBridgeManagerOpen(true)}
+                title="Add, remove, or export/import your jump bridge network"
+              >
+                <Link2 size={12} strokeWidth={2} />
+              </button>
+              <button
+                type="button"
+                className={`map-icons-toggle${showAnnotations ? " map-icons-toggle-active" : ""}`}
+                onClick={() => setShowAnnotations((v) => !v)}
+                title="Show your own markers and lines - right-click any system to add one"
+              >
+                Notes
+              </button>
+              <button
+                type="button"
+                className="map-icons-toggle"
+                onClick={() => setAnnotationsManagerOpen(true)}
+                title="Manage your markers and lines"
+              >
+                <Pencil size={12} strokeWidth={2} />
+              </button>
             </div>
 
             {selectedSystem && (
@@ -3717,6 +4664,27 @@ function MapView({
                     Send Route to Gate Check
                   </button>
                 )}
+                {route.length > 1 && (
+                  <button
+                    type="button"
+                    className="map-selected-stats-btn map-test-flight-btn"
+                    disabled={!(locationPinsBySystemRef.current.get(route[0])?.length ?? 0)}
+                    onClick={() => {
+                      const pins = locationPinsBySystemRef.current.get(route[0]) ?? [];
+                      for (const pin of pins) {
+                        startRouteFlightAnimation(pin.character, pin.image, route);
+                      }
+                    }}
+                    title={
+                      locationPinsBySystemRef.current.get(route[0])?.length
+                        ? "Prototype: animate every character currently at the route's start flying the whole route, leg by leg"
+                        : "No character is currently showing as being at the route's starting system"
+                    }
+                  >
+                    <Rocket size={13} strokeWidth={2} />
+                    Test Flight Along Route
+                  </button>
+                )}
                 <button
                   type="button"
                   className="map-selected-stats-btn"
@@ -3725,6 +4693,31 @@ function MapView({
                 >
                   <BarChart3 size={13} strokeWidth={2} />
                   Stats
+                </button>
+                <button
+                  type="button"
+                  className="map-selected-stats-btn"
+                  onClick={() => setScratchpadSystemId(selectedSystem.id)}
+                  title="Paste scan results for this system - a quick signature scratchpad, separate from the Wormholes chain tool"
+                >
+                  <Search size={13} strokeWidth={2} />
+                  Sigs
+                </button>
+                <button
+                  type="button"
+                  className="map-selected-stats-btn map-test-flight-btn"
+                  disabled={locationPinsBySystemRef.current.size === 0}
+                  onClick={() => {
+                    for (const [systemId, pins] of locationPinsBySystemRef.current) {
+                      for (const pin of pins) {
+                        startRouteFlightAnimation(pin.character, pin.image, [systemId, selectedSystem.id]);
+                      }
+                    }
+                  }}
+                  title="Prototype: animate every character's current location pin flying to this system, to preview the flight-animation idea before it's wired to real jumps"
+                >
+                  <Rocket size={13} strokeWidth={2} />
+                  Test Flight
                 </button>
               </div>
             )}
@@ -3796,6 +4789,7 @@ function MapView({
                   </div>
                 ))}
                 <p className="map-legend-hint">Zoom to region level to see icons</p>
+                <p className="map-legend-hint">Diamond-shaped systems are the major trade hubs (Jita, Amarr, Dodixie, Rens, Hek)</p>
                 {currentSystem && (
                   <div className="map-legend-row map-legend-current-location">
                     <MapPin size={13} strokeWidth={2.5} className="map-legend-pin" />
@@ -3810,6 +4804,17 @@ function MapView({
                 )}
                 {showSov && (
                   <p className="map-legend-hint">Sovereignty: zoom in on a system to see the owning alliance/corp logo badged next to its dot.</p>
+                )}
+                {showTerritory && territoryMode === "standings" && (
+                  <p className="map-legend-hint">
+                    Standings: unfilled null-sec systems have no standings data for your characters' contacts - that's distinct
+                    from the grey Neutral fill.
+                  </p>
+                )}
+                {showTerritory && territoryMode === "standings" && contactsNeedReauth.length > 0 && (
+                  <p className="map-legend-hint location-tracker-reauth-note">
+                    {contactsNeedReauth.join(", ")} need{contactsNeedReauth.length === 1 ? "s" : ""} reauth for standings data
+                  </p>
                 )}
               </div>
             )}
@@ -3838,6 +4843,94 @@ function MapView({
           <span className="map-hover-name">{sovHover.name}</span>
           <span className="map-hover-kills">{sovHover.kind === "alliance" ? "Alliance" : "Corporation"}</span>
         </div>
+      )}
+
+      {pendingLineFrom && (
+        <div className="map-pending-line-banner">
+          Click a system to finish the line from {pendingLineFrom.systemName} - right-click to cancel
+        </div>
+      )}
+
+      {pushedRoute && pushedRoute.length > 1 && (
+        <div className="map-pending-line-banner map-pushed-route-banner">
+          Showing the route just pushed to EVE Online ({pushedRoute.length - 1} jump{pushedRoute.length - 1 === 1 ? "" : "s"})
+          <button type="button" onClick={() => onClearPushedRoute?.()} title="Stop showing this route">
+            <X size={12} strokeWidth={2.5} />
+          </button>
+        </div>
+      )}
+
+      {annotationMenu && (
+        <div
+          className="map-ctx-menu-backdrop"
+          onClick={() => setAnnotationMenu(null)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setAnnotationMenu(null);
+          }}
+        >
+          <div
+            className="map-ctx-menu"
+            style={{ left: annotationMenu.clientX, top: annotationMenu.clientY }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {annotationMenu.hasMarker ? (
+              <button
+                type="button"
+                onClick={() => {
+                  removeMarkerBySystem(annotationMenu.system.id);
+                  setAnnotationMenu(null);
+                }}
+              >
+                Remove Marker
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setMarkerDraft({ clientX: annotationMenu.clientX, clientY: annotationMenu.clientY, system: annotationMenu.system });
+                  setAnnotationMenu(null);
+                }}
+              >
+                Add Marker Here
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                pendingLineFromRef.current = { system: annotationMenu.system, color: ANNOTATION_COLORS[0], style: "solid" };
+                setPendingLineFrom({ systemName: annotationMenu.system.name });
+                setAnnotationMenu(null);
+              }}
+            >
+              Draw Solid Line From Here
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                pendingLineFromRef.current = { system: annotationMenu.system, color: ANNOTATION_COLORS[0], style: "dashed" };
+                setPendingLineFrom({ systemName: annotationMenu.system.name });
+                setAnnotationMenu(null);
+              }}
+            >
+              Draw Dashed Line From Here
+            </button>
+          </div>
+        </div>
+      )}
+
+      {markerDraft && (
+        <MarkerDraftPopup
+          clientX={markerDraft.clientX}
+          clientY={markerDraft.clientY}
+          systemName={markerDraft.system.name}
+          onCancel={() => setMarkerDraft(null)}
+          onConfirm={(label, color) => {
+            addMarker(markerDraft.system.id, markerDraft.system.name, label, color);
+            setShowAnnotations(true);
+            setMarkerDraft(null);
+          }}
+        />
       )}
 
       {premium && lockOn && (
@@ -3879,6 +4972,41 @@ function MapView({
               ? `${hoveredKillCount} kill${hoveredKillCount === 1 ? "" : "s"} in the last hour`
               : "No recent activity"}
           </span>
+          {showSov &&
+            (() => {
+              const struct = sovStructRef.current.get(activeHover.system.id);
+              if (!struct) return null;
+              const vulnerableNow = isSovVulnerableNow(struct);
+              return (
+                <span className="map-hover-sov-structure">
+                  {struct.vulnerability_occupancy_level != null && (
+                    <>ADM {struct.vulnerability_occupancy_level.toFixed(1)} · </>
+                  )}
+                  {vulnerableNow
+                    ? `Vulnerable now, until ${formatExactTime(struct.vulnerable_end_time!)}`
+                    : struct.vulnerable_start_time
+                      ? `Vulnerable from ${formatExactTime(struct.vulnerable_start_time)}`
+                      : "No vulnerability window scheduled"}
+                </span>
+              );
+            })()}
+          {showSov &&
+            (() => {
+              const campaign = sovCampaignsRef.current.get(activeHover.system.id);
+              if (!campaign) return null;
+              const defenderPct = Math.round(campaign.defender_score * 100);
+              const attackerPct = Math.round(campaign.attackers_score * 100);
+              return (
+                <span className="map-hover-sov-structure map-hover-sov-campaign">
+                  {campaign.event_type === "ihub_defense"
+                    ? "iHub"
+                    : campaign.event_type === "tcu_defense"
+                      ? "TCU"
+                      : "Station"}{" "}
+                  under attack - defenders {defenderPct}% / attackers {attackerPct}%
+                </span>
+              );
+            })()}
           {hoveredKills.length > 0 && (
             <div className="map-hover-killboard">
               {hoveredKills.map((k) => (
@@ -3906,7 +5034,62 @@ function MapView({
       )}
 
       {statsSystemId !== null && <SystemStatsPanel systemId={statsSystemId} onClose={() => setStatsSystemId(null)} />}
+      {scratchpadSystemId !== null && (
+        <MapSignatureScratchpad
+          systemId={scratchpadSystemId}
+          systemName={systemByIdRef.current.get(scratchpadSystemId)?.name ?? ""}
+          onClose={() => setScratchpadSystemId(null)}
+        />
+      )}
+      {jumpBridgeManagerOpen && <MapJumpBridgePanel onClose={() => setJumpBridgeManagerOpen(false)} />}
+      {annotationsManagerOpen && <MapAnnotationsPanel onClose={() => setAnnotationsManagerOpen(false)} />}
     </>
+  );
+}
+
+interface MarkerDraftPopupProps {
+  clientX: number;
+  clientY: number;
+  systemName: string;
+  onCancel: () => void;
+  onConfirm: (label: string, color: string) => void;
+}
+
+/** The small inline form shown after choosing "Add Marker Here" from the
+ * right-click menu - deliberately just a label and a fixed color swatch
+ * (see ANNOTATION_COLORS), not a full editor, matching the plan's own
+ * instruction to keep this simple rather than building a drawing tool. */
+function MarkerDraftPopup({ clientX, clientY, systemName, onCancel, onConfirm }: MarkerDraftPopupProps) {
+  const [label, setLabel] = useState("");
+  const [color, setColor] = useState(ANNOTATION_COLORS[0]);
+
+  return (
+    <div className="map-ctx-menu-backdrop" onClick={onCancel}>
+      <div className="map-ctx-menu map-marker-draft" style={{ left: clientX, top: clientY }} onClick={(e) => e.stopPropagation()}>
+        <input
+          type="text"
+          placeholder={`Label for ${systemName} (optional)`}
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          autoFocus
+        />
+        <div className="map-marker-swatches">
+          {ANNOTATION_COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={`map-marker-swatch-btn${c === color ? " map-marker-swatch-active" : ""}`}
+              style={{ background: c }}
+              onClick={() => setColor(c)}
+              title={c}
+            />
+          ))}
+        </div>
+        <button type="button" className="kills-sync-btn" onClick={() => onConfirm(label.trim(), color)}>
+          Add Marker
+        </button>
+      </div>
+    </div>
   );
 }
 

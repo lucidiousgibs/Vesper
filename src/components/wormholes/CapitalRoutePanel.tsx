@@ -6,12 +6,15 @@ import { getCharacterSkills, type SessionCharacter } from "../../lib/eve";
 import { typeIconUrl } from "../../lib/format";
 import {
   planCapitalRoute,
+  planAutoRoute,
   JUMP_DRIVE_CALIBRATION_SKILL_ID,
   JUMP_FUEL_CONSERVATION_SKILL_ID,
   JUMP_FUEL_TYPE_NAMES,
   type RoutePosition,
   type CapitalRoutePlan,
 } from "../../lib/capitalRoute";
+import { getSystemKillHeat, type SystemKillHeat } from "../../lib/kills";
+import { planGateCheck, getGateActivity } from "../../lib/route";
 import { useErrorReporter } from "../../hooks/useErrorReporter";
 
 interface CapitalRoutePanelProps {
@@ -160,7 +163,52 @@ function CapitalRoutePanel({ characters, onClose }: CapitalRoutePanelProps) {
   const [waypoints, setWaypoints] = useState<SystemSearchMatch[]>([]);
   const [plan, setPlan] = useState<CapitalRoutePlan | null>(null);
   const [loading, setLoading] = useState(false);
+  const [autoRouteEnabled, setAutoRouteEnabled] = useState(false);
+  const [originSystem, setOriginSystem] = useState<SystemSearchMatch | null>(null);
+  const [destinationSystem, setDestinationSystem] = useState<SystemSearchMatch | null>(null);
+  const [avoidSystems, setAvoidSystems] = useState<SystemSearchMatch[]>([]);
+  /** Last-hour kill activity on any of the plan's own waypoint systems - the
+   * right danger signal for a jump-drive route, unlike Gate Check below,
+   * since a capital lands directly in each of these systems regardless of
+   * which stargates (if any) connect them. */
+  const [dangerSystems, setDangerSystems] = useState<SystemKillHeat[]>([]);
+  const [checkingGates, setCheckingGates] = useState(false);
+  /** Gate-camp check run against a hypothetical STARGATE path between the
+   * same waypoints - deliberately separate from dangerSystems above, since a
+   * jump drive never actually takes this path. Offered as an extra,
+   * explicitly-labeled option rather than folded into the main result. */
+  const [gateCheckKills, setGateCheckKills] = useState<{ total: number; bySystem: Map<number, number> } | null>(null);
   const reportError = useErrorReporter();
+
+  async function checkWaypointDanger(systemIds: number[]) {
+    try {
+      const heat = await getSystemKillHeat();
+      const idSet = new Set(systemIds);
+      setDangerSystems(heat.filter((h) => idSet.has(h.system_id) && h.kill_count > 0));
+    } catch {
+      // Best-effort - a failed heat fetch just means no danger flags shown,
+      // not a reason to fail the whole route calculation.
+      setDangerSystems([]);
+    }
+  }
+
+  async function handleCheckGateActivity(systemIds: number[]) {
+    if (systemIds.length < 2) return;
+    setCheckingGates(true);
+    setGateCheckKills(null);
+    try {
+      const result = await planGateCheck(systemIds, [], "shortest");
+      const routeIds = result.systems.map((s) => s.id);
+      const events = await getGateActivity(routeIds);
+      const bySystem = new Map<number, number>();
+      for (const e of events) bySystem.set(e.system_id, (bySystem.get(e.system_id) ?? 0) + 1);
+      setGateCheckKills({ total: events.length, bySystem });
+    } catch (err) {
+      reportError(`Failed to check gate activity: ${String(err)}`);
+    } finally {
+      setCheckingGates(false);
+    }
+  }
 
   useEffect(() => {
     if (!ship) {
@@ -210,6 +258,8 @@ function CapitalRoutePanel({ characters, onClose }: CapitalRoutePanelProps) {
     if (!jumpInfo || waypoints.length < 2) return;
     setLoading(true);
     setPlan(null);
+    setDangerSystems([]);
+    setGateCheckKills(null);
     try {
       const positions = await getSystemPositions(waypoints.map((w) => w.id));
       const posById = new Map(positions.map((p) => [p.system_id, [p.x, p.y, p.z] as [number, number, number]]));
@@ -224,6 +274,7 @@ function CapitalRoutePanel({ characters, onClose }: CapitalRoutePanelProps) {
         pos: posById.get(w.id)!,
       }));
       setPlan(planCapitalRoute(routePositions, jumpInfo.base_range_ly, jumpInfo.fuel_per_ly, skillLevels.jdc, skillLevels.jfc));
+      checkWaypointDanger(waypoints.map((w) => w.id));
     } catch (err) {
       reportError(`Failed to plan capital route: ${String(err)}`);
     } finally {
@@ -231,8 +282,31 @@ function CapitalRoutePanel({ characters, onClose }: CapitalRoutePanelProps) {
     }
   }
 
+  async function handleAutoCalculate() {
+    if (!jumpInfo || !originSystem || !destinationSystem) return;
+    setLoading(true);
+    setPlan(null);
+    setDangerSystems([]);
+    setGateCheckKills(null);
+    try {
+      const routePositions = await planAutoRoute(
+        originSystem.id,
+        destinationSystem.id,
+        effectiveRangeLy ?? jumpInfo.base_range_ly,
+        avoidSystems.map((s) => s.id),
+      );
+      setPlan(planCapitalRoute(routePositions, jumpInfo.base_range_ly, jumpInfo.fuel_per_ly, skillLevels.jdc, skillLevels.jfc));
+      checkWaypointDanger(routePositions.map((r) => r.systemId));
+    } catch (err) {
+      reportError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const fuelTypeName = jumpInfo ? (JUMP_FUEL_TYPE_NAMES[jumpInfo.fuel_type_id] ?? "Isotopes") : null;
   const effectiveRangeLy = jumpInfo ? jumpInfo.base_range_ly * (1 + 0.2 * skillLevels.jdc) : null;
+  const planSystemIds = plan && plan.legs.length > 0 ? [plan.legs[0].fromSystemId, ...plan.legs.map((l) => l.toSystemId)] : [];
 
   return (
     <div className="wh-route-panel">
@@ -301,24 +375,111 @@ function CapitalRoutePanel({ characters, onClose }: CapitalRoutePanelProps) {
             {characterId !== "none" && ` (Jump Drive Calibration ${skillLevels.jdc}, Jump Fuel Conservation ${skillLevels.jfc})`}
           </p>
 
-          <WaypointSearchBox onPick={handleAddWaypoint} />
+          <label className="settings-checkbox-row">
+            <input
+              type="checkbox"
+              checked={autoRouteEnabled}
+              onChange={(e) => {
+                setAutoRouteEnabled(e.target.checked);
+                setPlan(null);
+              }}
+            />
+            Auto-route (find a jump-drive path automatically, instead of picking every waypoint by hand)
+          </label>
 
-          <div className="capital-route-waypoint-list">
-            {waypoints.length === 0 && <p className="detail-empty">Add at least two systems to plan a route.</p>}
-            {waypoints.map((w, i) => (
-              <div key={w.id} className="capital-route-waypoint-row">
-                <span className="capital-route-waypoint-index">{i + 1}</span>
-                <span className="capital-route-waypoint-name">{w.name}</span>
-                <button type="button" className="wh-delete-btn" onClick={() => handleRemoveWaypoint(w.id)} title="Remove">
-                  <Trash2 size={12} strokeWidth={2} />
-                </button>
+          {autoRouteEnabled ? (
+            <>
+              <p className="settings-section-hint">
+                Picks the shortest jump-drive path by itself, respecting this ship's effective range and EVE's own rule that a
+                jump drive can neither activate from nor land in high-sec space.
+              </p>
+              <WaypointSearchBox
+                onPick={(match) => {
+                  setOriginSystem(match);
+                  setPlan(null);
+                }}
+              />
+              {originSystem && (
+                <div className="capital-route-ship-picked">
+                  <span>From: {originSystem.name}</span>
+                  <button type="button" className="fittings-ship-clear-btn" onClick={() => setOriginSystem(null)} title="Clear origin">
+                    <X size={12} strokeWidth={2.5} />
+                  </button>
+                </div>
+              )}
+              <WaypointSearchBox
+                onPick={(match) => {
+                  setDestinationSystem(match);
+                  setPlan(null);
+                }}
+              />
+              {destinationSystem && (
+                <div className="capital-route-ship-picked">
+                  <span>To: {destinationSystem.name}</span>
+                  <button
+                    type="button"
+                    className="fittings-ship-clear-btn"
+                    onClick={() => setDestinationSystem(null)}
+                    title="Clear destination"
+                  >
+                    <X size={12} strokeWidth={2.5} />
+                  </button>
+                </div>
+              )}
+              <WaypointSearchBox
+                onPick={(match) => {
+                  if (avoidSystems.some((s) => s.id === match.id)) return;
+                  setAvoidSystems((prev) => [...prev, match]);
+                  setPlan(null);
+                }}
+              />
+              <div className="capital-route-waypoint-list">
+                {avoidSystems.length === 0 && <p className="detail-empty">Optionally add systems to avoid (e.g. a known camp).</p>}
+                {avoidSystems.map((s) => (
+                  <div key={s.id} className="capital-route-waypoint-row">
+                    <span className="capital-route-waypoint-name">Avoid: {s.name}</span>
+                    <button
+                      type="button"
+                      className="wh-delete-btn"
+                      onClick={() => setAvoidSystems((prev) => prev.filter((a) => a.id !== s.id))}
+                      title="Remove"
+                    >
+                      <Trash2 size={12} strokeWidth={2} />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+              <button
+                type="button"
+                className="wh-origin-btn"
+                disabled={!originSystem || !destinationSystem || loading}
+                onClick={handleAutoCalculate}
+              >
+                {loading ? "Finding route..." : "Find Route"}
+              </button>
+            </>
+          ) : (
+            <>
+              <WaypointSearchBox onPick={handleAddWaypoint} />
 
-          <button type="button" className="wh-origin-btn" disabled={waypoints.length < 2 || loading} onClick={handleCalculate}>
-            {loading ? "Calculating..." : "Calculate Route"}
-          </button>
+              <div className="capital-route-waypoint-list">
+                {waypoints.length === 0 && <p className="detail-empty">Add at least two systems to plan a route.</p>}
+                {waypoints.map((w, i) => (
+                  <div key={w.id} className="capital-route-waypoint-row">
+                    <span className="capital-route-waypoint-index">{i + 1}</span>
+                    <span className="capital-route-waypoint-name">{w.name}</span>
+                    <button type="button" className="wh-delete-btn" onClick={() => handleRemoveWaypoint(w.id)} title="Remove">
+                      <Trash2 size={12} strokeWidth={2} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button type="button" className="wh-origin-btn" disabled={waypoints.length < 2 || loading} onClick={handleCalculate}>
+                {loading ? "Calculating..." : "Calculate Route"}
+              </button>
+            </>
+          )}
         </>
       )}
 
@@ -354,6 +515,36 @@ function CapitalRoutePanel({ characters, onClose }: CapitalRoutePanelProps) {
               <span className="market-stat-value">{formatMinutes(plan.totalMinutes)}</span>
             </div>
           </div>
+
+          {dangerSystems.length > 0 && (
+            <div className="capital-route-danger">
+              <p className="capital-route-warning">Recent kill activity on this route:</p>
+              {dangerSystems.map((s) => (
+                <p key={s.system_id} className="capital-route-danger-row">
+                  {s.system_name} &mdash; {s.kill_count} kill{s.kill_count === 1 ? "" : "s"} in the last hour
+                </p>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="wh-origin-btn"
+            disabled={checkingGates || planSystemIds.length < 2}
+            onClick={() => handleCheckGateActivity(planSystemIds)}
+            title="Checks for gate-camp activity along a hypothetical STARGATE path between these same systems - informational only, since a jump drive never actually takes this path"
+          >
+            {checkingGates ? "Checking gates..." : "Also Check Gate Activity"}
+          </button>
+          {gateCheckKills && (
+            <p className="settings-section-hint">
+              {gateCheckKills.total === 0
+                ? "No recent kills found on a stargate path between these systems."
+                : `${gateCheckKills.total} recent kill${gateCheckKills.total === 1 ? "" : "s"} found across ${gateCheckKills.bySystem.size} system${gateCheckKills.bySystem.size === 1 ? "" : "s"} on a stargate path between these systems.`}{" "}
+              This checks a stargate route your capital won't actually fly - its jump drive goes directly between
+              waypoints, not through gates.
+            </p>
+          )}
         </div>
       )}
     </div>

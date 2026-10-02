@@ -1,12 +1,7 @@
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
-import {
-  importSignatures,
-  deleteSignature,
-  type ChainSystem,
-  type Signature,
-  type SignatureKind,
-} from "../../lib/wormholes";
+import { importSignatures, deleteSignature, type ChainSystem, type Signature } from "../../lib/wormholes";
+import { parseScanPaste, KIND_LABEL } from "../../lib/signatureParsing";
 import { useErrorReporter } from "../../hooks/useErrorReporter";
 
 interface SignaturePanelProps {
@@ -15,50 +10,6 @@ interface SignaturePanelProps {
   signatures: Signature[];
   onChanged: () => void;
 }
-
-const KIND_BY_GROUP: Record<string, SignatureKind> = {
-  "combat site": "combat",
-  "data site": "data",
-  "relic site": "relic",
-  "gas site": "gas",
-  "wormhole": "wormhole",
-  "ore site": "ore",
-};
-
-function normalizeKind(group: string): SignatureKind {
-  return KIND_BY_GROUP[group.trim().toLowerCase()] ?? "unknown";
-}
-
-/** Parses EVE's in-game Scanning window clipboard paste: one signature per
- * line, tab-separated (Sig ID, Group, Name, Signal Strength, Distance) -
- * some columns are blank until the site is actually scanned down, so this
- * only requires the leading Sig ID column to treat a line as a signature. */
-function parseScanPaste(text: string): { sig_id: string; kind: SignatureKind; sig_type: string; signal_strength: string }[] {
-  const results: { sig_id: string; kind: SignatureKind; sig_type: string; signal_strength: string }[] = [];
-  for (const line of text.split("\n")) {
-    const cols = line.split("\t").map((c) => c.trim());
-    if (cols.length < 2) continue;
-    const sigId = cols[0];
-    if (!/^[A-Z]{3}-\d{3}$/.test(sigId)) continue;
-    results.push({
-      sig_id: sigId,
-      kind: normalizeKind(cols[1] ?? ""),
-      sig_type: cols[2] ?? "",
-      signal_strength: cols[3] ?? "",
-    });
-  }
-  return results;
-}
-
-const KIND_LABEL: Record<SignatureKind, string> = {
-  unknown: "Unscanned",
-  combat: "Combat",
-  data: "Data",
-  relic: "Relic",
-  gas: "Gas",
-  wormhole: "Wormhole",
-  ore: "Ore",
-};
 
 const AGE_STALE_MS = 30 * 60 * 1000;
 const AGE_OLD_MS = 2 * 60 * 60 * 1000;

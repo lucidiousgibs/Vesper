@@ -1,6 +1,6 @@
 use crate::{
-    abyssal, app_settings_backup, asset_history, auth, characters, config, esi, fittings, intel_feed, kill_history, kills, map, market,
-    multibox, news, pi, route, scout, settings_sync, skillplans, threats, tracked_entities, wars, wormholes,
+    abyssal, app_settings_backup, asset_history, auth, capital_route, characters, config, esi, fittings, intel_feed, kill_history, kills,
+    map, map_scratchpad, market, multibox, news, pi, route, scout, settings_sync, skillplans, threats, tracked_entities, wars, wormholes,
 };
 #[cfg(windows)]
 use crate::combat_overlay;
@@ -118,6 +118,18 @@ pub async fn get_character_overview(
 pub async fn get_character_skills(state: State<'_, AppState>, id: i64) -> Result<esi::CharacterSkills, String> {
     let config = config::load()?;
     esi::fetch_character_skills(&state.http_client, &config, id).await
+}
+
+#[tauri::command]
+pub async fn set_autopilot_waypoint(
+    state: State<'_, AppState>,
+    id: i64,
+    destination_id: i64,
+    add_to_beginning: bool,
+    clear_other_waypoints: bool,
+) -> Result<(), String> {
+    let config = config::load()?;
+    esi::set_autopilot_waypoint(&state.http_client, &config, id, destination_id, add_to_beginning, clear_other_waypoints).await
 }
 
 #[tauri::command]
@@ -709,6 +721,30 @@ pub async fn get_sov_structures(state: State<'_, AppState>) -> Result<Vec<map::S
 }
 
 #[tauri::command]
+pub async fn get_sov_campaigns(state: State<'_, AppState>) -> Result<Vec<map::SovCampaign>, String> {
+    map::get_sov_campaigns(&state.http_client).await
+}
+
+#[tauri::command]
+pub async fn list_scratchpad_signatures(app: AppHandle, system_id: i64) -> Result<Vec<map_scratchpad::ScratchpadSignature>, String> {
+    map_scratchpad::list_scratchpad_signatures(app, system_id).await
+}
+
+#[tauri::command]
+pub async fn import_scratchpad_signatures(
+    app: AppHandle,
+    system_id: i64,
+    signatures: Vec<wormholes::ParsedSignature>,
+) -> Result<map_scratchpad::ImportScratchpadResult, String> {
+    map_scratchpad::import_scratchpad_signatures(app, system_id, signatures).await
+}
+
+#[tauri::command]
+pub async fn delete_scratchpad_signature(app: AppHandle, id: String) -> Result<(), String> {
+    map_scratchpad::delete_scratchpad_signature(app, id).await
+}
+
+#[tauri::command]
 pub async fn get_incursions(state: State<'_, AppState>) -> Result<Vec<threats::IncursionSystem>, String> {
     threats::fetch_incursions(&state.http_client).await
 }
@@ -1055,6 +1091,18 @@ pub async fn get_region_sell_min_prices(
 #[tauri::command]
 pub async fn get_scout_connections(state: State<'_, AppState>, system_name: String) -> Result<Vec<scout::ScoutConnection>, String> {
     scout::fetch_scout_connections(&state.http_client, &system_name).await
+}
+
+#[tauri::command]
+pub async fn plan_auto_capital_route(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    origin_id: i64,
+    destination_id: i64,
+    range_ly: f64,
+    avoid_ids: Vec<i64>,
+) -> Result<Vec<capital_route::AutoRouteNode>, String> {
+    capital_route::plan_auto_capital_route(&app, &state.http_client, origin_id, destination_id, range_ly, avoid_ids).await
 }
 
 #[tauri::command]

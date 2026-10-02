@@ -176,6 +176,60 @@ export function getSovStructures(): Promise<SovStructureStatus[]> {
   return invoke("get_sov_structures");
 }
 
+export interface SovCampaign {
+  campaign_id: number;
+  solar_system_id: number;
+  constellation_id: number;
+  structure_id: number;
+  event_type: string;
+  defender_id: number;
+  defender_score: number;
+  attackers_score: number;
+  start_time: string;
+}
+
+/** Live TCU/iHub/station attack-defense timers - active sovereignty fights,
+ * distinct from getSovStructures' ADM/vulnerability-window status above. */
+export function getSovCampaigns(): Promise<SovCampaign[]> {
+  return invoke("get_sov_campaigns");
+}
+
+export interface ScratchpadSignature {
+  id: string;
+  system_id: number;
+  sig_id: string;
+  sig_type: string;
+  signal_strength: string;
+  kind: string;
+  first_seen_at: number;
+  last_seen_at: number;
+}
+
+export interface ImportScratchpadResult {
+  imported: number;
+  updated: number;
+  missing_sig_ids: string[];
+}
+
+/** A quick per-system signature scratchpad for the main map - see
+ * signatureParsing.ts for the shared paste parser, and
+ * map_scratchpad.rs's own doc comment for why this is a separate, simpler
+ * table from the wormhole-chain tool's chain-scoped signatures. */
+export function listScratchpadSignatures(systemId: number): Promise<ScratchpadSignature[]> {
+  return invoke("list_scratchpad_signatures", { systemId });
+}
+
+export function importScratchpadSignatures(
+  systemId: number,
+  signatures: { sig_id: string; kind: string; sig_type: string; signal_strength: string }[],
+): Promise<ImportScratchpadResult> {
+  return invoke("import_scratchpad_signatures", { systemId, signatures });
+}
+
+export function deleteScratchpadSignature(id: string): Promise<void> {
+  return invoke("delete_scratchpad_signature", { id });
+}
+
 export interface IncursionSystem {
   system_id: number;
   faction_name: string;

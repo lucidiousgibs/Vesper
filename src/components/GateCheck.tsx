@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { X, ArrowLeftRight, Star } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { confirm as confirmDialog } from "@tauri-apps/plugin-dialog";
 import { getMapData, type MapSystem } from "../lib/map";
 import { planGateCheck, getGateActivity, type RoutePreference, type GateCheckSystem, type GateKillEvent } from "../lib/route";
 import { getSystemKillHeat } from "../lib/kills";
 import { useErrorReporter } from "../hooks/useErrorReporter";
 import { securityColor, formatSecurity } from "../lib/format";
 import { useSavedRoutes, type SavedRoute } from "../hooks/useSavedRoutes";
+import { setAutopilotWaypoint, type SessionCharacter } from "../lib/eve";
 import type { SystemSummary } from "./SystemKillboard";
 import type { GateSummary } from "./GateKillboard";
 
@@ -83,9 +85,24 @@ interface GateCheckProps {
    * consumed via onConsumeInitialWaypoints once applied. */
   initialWaypoints?: MapSystem[] | null;
   onConsumeInitialWaypoints?: () => void;
+  /** For the "Push Route to EVE Online" button - which logged-in character to
+   * push the computed route's waypoints to. */
+  characters: SessionCharacter[];
+  /** Called with the full computed route right after it's successfully
+   * pushed to autopilot, so the Map tab can draw the exact same path - see
+   * MapView's own pushedRoute prop for why that's its own thing rather than
+   * just setting a destination there. */
+  onRoutePushed?: (systems: { id: number; name: string }[]) => void;
 }
 
-function GateCheck({ onSelectSystem, onSelectGate, initialWaypoints, onConsumeInitialWaypoints }: GateCheckProps) {
+function GateCheck({
+  onSelectSystem,
+  onSelectGate,
+  initialWaypoints,
+  onConsumeInitialWaypoints,
+  characters,
+  onRoutePushed,
+}: GateCheckProps) {
   const [mapSystems, setMapSystems] = useState<MapSystem[]>([]);
   const [waypoints, setWaypoints] = useState<Slot[]>([emptySlot(0), emptySlot(1)]);
   const [avoids, setAvoids] = useState<Slot[]>([emptySlot(100)]);
@@ -238,6 +255,43 @@ function GateCheck({ onSelectSystem, onSelectGate, initialWaypoints, onConsumeIn
     const waypointIds = waypoints.filter((s) => s.system).map((s) => s.system!.id);
     const avoidIds = avoids.filter((s) => s.system).map((s) => s.system!.id);
     await runGateCheck(waypointIds, avoidIds, preference);
+  }
+
+  const [autopilotCharacterId, setAutopilotCharacterId] = useState<number | "none">("none");
+  const [pushingAutopilot, setPushingAutopilot] = useState(false);
+  const [autopilotPushed, setAutopilotPushed] = useState(0);
+
+  /** Pushes every system on the computed route, not just the final
+   * destination, as a queued autopilot waypoint (first call clears any
+   * existing queue, every call after appends) - this is the actual fix for
+   * "the game flew a different route than the Secure/Unsecure/Shortest I
+   * picked here": ESI has no way to read or override the client's own
+   * route-preference setting (confirmed against the full ESI spec), but a
+   * queue of directly gate-adjacent systems leaves that setting nothing left
+   * to decide between - there's only ever one gate linking each pushed pair. */
+  async function handleSetAutopilot() {
+    if (!routeSystems || routeSystems.length < 2 || autopilotCharacterId === "none") return;
+    const confirmed = await confirmDialog(
+      "This queues every system on this route as an autopilot waypoint, in order - not just the destination.\n\n" +
+        "Because of that, your EVE client's own Shortest/Safest/Less-Safe autopilot preference has nothing left to " +
+        "decide between any two steps - this exact path will fly regardless of what it's set to in-game.\n\n" +
+        "Continue?",
+      { title: "Push Route to EVE Online", kind: "info" },
+    );
+    if (!confirmed) return;
+    setPushingAutopilot(true);
+    setAutopilotPushed(0);
+    try {
+      for (let i = 0; i < routeSystems.length; i++) {
+        await setAutopilotWaypoint(autopilotCharacterId, routeSystems[i].id, false, i === 0);
+        setAutopilotPushed(i + 1);
+      }
+      onRoutePushed?.(routeSystems.map((s) => ({ id: s.id, name: s.name })));
+    } catch (err) {
+      reportError(`Failed to push route to EVE Online: ${String(err)}`);
+    } finally {
+      setPushingAutopilot(false);
+    }
   }
 
   // One-shot: a route sent over from the Map tab pre-fills the waypoint
@@ -439,6 +493,37 @@ function GateCheck({ onSelectSystem, onSelectGate, initialWaypoints, onConsumeIn
           <div className="gatecheck-results">
             <p className="gatecheck-results-heading">
               Your route <span>({rows.length - 1} jumps)</span>
+            </p>
+            <div className="gatecheck-autopilot-row">
+              <label className="capital-route-char-picker">
+                <span>Push route for</span>
+                <select
+                  value={autopilotCharacterId}
+                  onChange={(e) => setAutopilotCharacterId(e.target.value === "none" ? "none" : Number(e.target.value))}
+                >
+                  <option value="none">Choose a character...</option>
+                  {characters.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="gatecheck-check-button"
+                disabled={autopilotCharacterId === "none" || pushingAutopilot}
+                onClick={handleSetAutopilot}
+                title="Queues every system on this route as an autopilot waypoint, in order - not just the destination, so the in-game client's own Shortest/Safest/Less-Safe setting has nothing left to decide"
+              >
+                {pushingAutopilot ? `Pushing route... ${autopilotPushed}/${routeSystems?.length ?? 0}` : "Push Route to EVE Online"}
+              </button>
+            </div>
+            <p className="gatecheck-caveat">
+              This queues every system above as an autopilot waypoint, not just the destination - the client has no
+              gate choice left to make between any two, so your Shortest/Secure/Unsecure pick above is what actually
+              flies, regardless of what route preference is set in the EVE client itself (ESI has no way to read or
+              change that setting).
             </p>
             <p className="gatecheck-caveat">Displaying confirmed kills from the last 60 minutes // EVE Time.</p>
             <p className="gatecheck-caveat">

@@ -3665,6 +3665,88 @@ async fn authorized_post<B: Serialize + ?Sized, T: DeserializeOwned>(
     }
 }
 
+/// Same retry/auth contract as authorized_post, but for a write call that
+/// takes query parameters instead of a JSON body and returns 204 No Content
+/// on success - ESI's autopilot waypoint endpoint is the only call shaped
+/// this way so far, hence a dedicated helper rather than stretching
+/// authorized_post's JSON-body/JSON-response contract to fit.
+async fn authorized_post_no_content(
+    client: &reqwest::Client,
+    access_token: &str,
+    path: &str,
+    query: &[(&str, String)],
+) -> Result<(), EsiError> {
+    let mut attempt = 0;
+    loop {
+        let response =
+            match client.post(format!("{ESI_BASE}{path}")).bearer_auth(access_token).query(query).send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    if retry_delay(attempt).await {
+                        attempt += 1;
+                        continue;
+                    }
+                    return Err(EsiError::Failed(format!("ESI request failed: {e}")));
+                }
+            };
+        if matches!(response.status(), reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN) {
+            return Err(EsiError::MissingScope);
+        }
+        if is_retryable_status(response.status()) && retry_delay(attempt).await {
+            attempt += 1;
+            continue;
+        }
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(EsiError::Failed(format!("ESI {status} on {path}: {text}")));
+        }
+        return Ok(());
+    }
+}
+
+/// Sets (or queues) an in-game autopilot waypoint for this character -
+/// esi-ui.write_waypoint.v1. This only sets the destination; the actual
+/// gate-by-gate path the client flies to get there is computed by the
+/// running EVE client itself, using whatever route preference
+/// (Shortest/Safest/Less-Safe) is set in that client's own UI settings -
+/// ESI has no endpoint to read or change that preference (confirmed against
+/// the full ESI OpenAPI spec: every /ui/* path is an "open window" or this
+/// waypoint call, nothing else). That's a real, unresolvable gap for anyone
+/// relying on this to match a specific route calculation - see
+/// GateCheck.tsx's own "Set Autopilot" button for how the frontend works
+/// around that gap - pushing every system on a computed route as a queued
+/// waypoint, not just the final destination, so the client's own preference
+/// setting has nothing left to decide between any two consecutive, directly
+/// gate-adjacent systems.
+pub async fn set_autopilot_waypoint(
+    client: &reqwest::Client,
+    config: &SsoConfig,
+    character_id: i64,
+    destination_id: i64,
+    add_to_beginning: bool,
+    clear_other_waypoints: bool,
+) -> Result<(), String> {
+    let Some(access_token) = get_access_token(client, config, character_id).await else {
+        return Err("This character needs to reconnect to set an autopilot waypoint.".to_string());
+    };
+    authorized_post_no_content(
+        client,
+        &access_token,
+        "/ui/autopilot/waypoint/",
+        &[
+            ("destination_id", destination_id.to_string()),
+            ("add_to_beginning", add_to_beginning.to_string()),
+            ("clear_other_waypoints", clear_other_waypoints.to_string()),
+        ],
+    )
+    .await
+    .map_err(|e| match e {
+        EsiError::MissingScope => "This character needs to reconnect to set an autopilot waypoint.".to_string(),
+        EsiError::Failed(msg) => msg,
+    })
+}
+
 #[derive(Deserialize)]
 struct EsiFittingItem {
     type_id: i64,

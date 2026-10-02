@@ -2,6 +2,7 @@ mod abyssal;
 mod app_settings_backup;
 mod asset_history;
 mod auth;
+mod capital_route;
 mod characters;
 #[cfg(windows)]
 mod combat_overlay;
@@ -13,6 +14,7 @@ mod intel_feed;
 mod kill_history;
 mod kills;
 mod map;
+mod map_scratchpad;
 mod market;
 mod multibox;
 mod news;
@@ -34,6 +36,15 @@ pub fn run() {
 
     let http_client = reqwest::Client::builder()
         .user_agent("vesper-capsuleer-ops/0.1 (contact: barry.millard22@gmail.com)")
+        // killmail.stream's /poll/ endpoint long-polls up to 60s with no
+        // data flowing while nothing new has happened - indistinguishable,
+        // from a NAT router or firewall's point of view, from a dead idle
+        // connection, and plenty of consumer routers silently drop exactly
+        // that after ~60s of silence. TCP keepalive probes every 30s keep
+        // the connection looking alive to any middlebox in between,
+        // reducing how often a perfectly healthy long-poll gets cut off
+        // and surfaces as a "killmail.stream request failed" error.
+        .tcp_keepalive(std::time::Duration::from_secs(30))
         .build()
         .expect("failed to build HTTP client");
 
@@ -79,6 +90,7 @@ pub fn run() {
             commands::logout_character,
             commands::get_character_overview,
             commands::get_character_skills,
+            commands::set_autopilot_waypoint,
             commands::get_character_location,
             commands::get_all_skills,
             commands::get_character_skill_queue,
@@ -175,6 +187,10 @@ pub fn run() {
             commands::get_fw_systems,
             commands::get_sovereignty_map,
             commands::get_sov_structures,
+            commands::get_sov_campaigns,
+            commands::list_scratchpad_signatures,
+            commands::import_scratchpad_signatures,
+            commands::delete_scratchpad_signature,
             commands::get_incursions,
             commands::get_system_activity,
             commands::get_system_kill_history,
@@ -216,6 +232,7 @@ pub fn run() {
             commands::get_region_sell_min_price,
             commands::get_region_sell_min_prices,
             commands::get_scout_connections,
+            commands::plan_auto_capital_route,
             commands::resync_market_data,
             commands::get_region_market_history,
             commands::scan_ship_market,

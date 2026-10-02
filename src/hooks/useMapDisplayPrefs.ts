@@ -5,6 +5,12 @@ const SHOW_SERVICE_ICONS_KEY = "vesper.map.showServiceIcons";
 const SHOW_FW_CONTESTED_KEY = "vesper.map.showFwContested";
 const SHOW_SOV_KEY = "vesper.map.showSov";
 const SHOW_INCURSIONS_KEY = "vesper.map.showIncursions";
+const SHOW_DANGER_ZONE_KEY = "vesper.map.showDangerZone";
+const SHOW_SCOUT_CONNECTIONS_KEY = "vesper.map.showScoutConnections";
+const SHOW_JUMP_BRIDGES_KEY = "vesper.map.showJumpBridges";
+const SHOW_ANNOTATIONS_KEY = "vesper.map.showAnnotations";
+const SHOW_TERRITORY_KEY = "vesper.map.showTerritory";
+const TERRITORY_MODE_KEY = "vesper.map.territoryMode";
 const HEAT_MODE_KEY = "vesper.map.heatMode";
 
 /** Whether the Map screen's key/legend panel is open, whether the
@@ -22,6 +28,12 @@ export function useMapDisplayPrefs() {
   const [showFwContested, setShowFwContested] = usePersistentState<boolean>(SHOW_FW_CONTESTED_KEY, false);
   const [showSov, setShowSov] = usePersistentState<boolean>(SHOW_SOV_KEY, false);
   const [showIncursions, setShowIncursions] = usePersistentState<boolean>(SHOW_INCURSIONS_KEY, false);
+  const [showDangerZone, setShowDangerZone] = usePersistentState<boolean>(SHOW_DANGER_ZONE_KEY, false);
+  const [showScoutConnections, setShowScoutConnections] = usePersistentState<boolean>(SHOW_SCOUT_CONNECTIONS_KEY, false);
+  const [showJumpBridges, setShowJumpBridges] = usePersistentState<boolean>(SHOW_JUMP_BRIDGES_KEY, false);
+  const [showAnnotations, setShowAnnotations] = usePersistentState<boolean>(SHOW_ANNOTATIONS_KEY, false);
+  const [showTerritory, setShowTerritory] = usePersistentState<boolean>(SHOW_TERRITORY_KEY, false);
+  const [territoryMode, setTerritoryMode] = usePersistentState<"sov" | "standings">(TERRITORY_MODE_KEY, "sov");
   const [heatMode, setHeatMode] = usePersistentState<"kills" | "traffic" | "npc">(HEAT_MODE_KEY, "kills");
 
   return {
@@ -35,6 +47,18 @@ export function useMapDisplayPrefs() {
     setShowSov,
     showIncursions,
     setShowIncursions,
+    showDangerZone,
+    setShowDangerZone,
+    showScoutConnections,
+    setShowScoutConnections,
+    showJumpBridges,
+    setShowJumpBridges,
+    showAnnotations,
+    setShowAnnotations,
+    showTerritory,
+    setShowTerritory,
+    territoryMode,
+    setTerritoryMode,
     heatMode,
     setHeatMode,
   };

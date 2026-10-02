@@ -22,3 +22,22 @@ export function matchContactStanding(
   }
   return null;
 }
+
+/** Same 5-bucket thresholds as ContactsDirectory.tsx's own standingLabel -
+ * kept as a separate small helper here (per the map territory overlay's own
+ * needs) rather than importing a component-local function, but the
+ * boundaries must stay identical to that file's if either ever changes.
+ * Returns null for "no contact entry matched at all", distinct from tier 2
+ * (Neutral, an actual 0-ish standing) - the map overlay renders these two
+ * states differently (unfilled vs grey-filled) since most sov-holders won't
+ * be on any given character's contact list at all. */
+export function standingTier(value: number | null): number | null {
+  if (value === null) return null;
+  if (value <= -5.5) return 0; // Terrible
+  if (value <= -0.5) return 1; // Bad
+  if (value < 0.5) return 2; // Neutral
+  if (value < 5.5) return 3; // Good
+  return 4; // Excellent
+}
+
+export const STANDING_TIER_LABELS = ["Terrible", "Bad", "Neutral", "Good", "Excellent"];

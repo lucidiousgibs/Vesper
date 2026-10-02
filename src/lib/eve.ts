@@ -598,6 +598,22 @@ export function sendMail(id: number, subject: string, body: string, recipients: 
   return invoke("send_mail", { id, subject, body, recipients });
 }
 
+/** Sets (or queues) an in-game autopilot waypoint - esi-ui.write_waypoint.v1.
+ * Only sets the destination; the client itself computes the gate-by-gate
+ * path using whatever route preference (Shortest/Safest/Less-Safe) is set in
+ * its own UI, which ESI has no endpoint to read or override (confirmed
+ * against the full current ESI spec - ui/autopilot/waypoint is the only
+ * autopilot-related call that exists at all). See pushRouteToAutopilot
+ * below for how this app works around that gap rather than trying to detect it. */
+export function setAutopilotWaypoint(
+  id: number,
+  destinationId: number,
+  addToBeginning: boolean,
+  clearOtherWaypoints: boolean,
+): Promise<void> {
+  return invoke("set_autopilot_waypoint", { id, destinationId, addToBeginning, clearOtherWaypoints });
+}
+
 export interface NotificationEntry {
   notification_id: number;
   sender_name: string;
