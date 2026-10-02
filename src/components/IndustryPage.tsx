@@ -580,7 +580,12 @@ function BuildTreeRow({
             className="industry-build-checkbox"
             checked={checkedPaths.has(path)}
             onChange={() => onToggle(node, path)}
-            aria-label={`Include ${node.name} in the Multibuy clipboard export`}
+            aria-label={`${node.name} - checked means you still need this`}
+            title={
+              checkedPaths.has(path)
+                ? "Checked: counted in Build Cost and included in the Multibuy export. Uncheck if you already have this in stock - its cost (and its own sub-materials) drops out of Build Cost entirely, and Profit below goes up by the same amount."
+                : "Unchecked: treated as stock you already have - its cost is excluded from Build Cost (and Profit is higher by that amount), and it won't be in the Multibuy export."
+            }
           />
         )}
         <button
@@ -848,7 +853,7 @@ function BuildTreeFlatList({
                               own, so there's no "one run" to cost out). */}
                           {parentNode.outputPerRun != null && parentNode.buildCostPerUnit != null && (
                             <span className="industry-build-parent-header-meta">
-                              {parentNode.outputPerRun.toLocaleString()} per run · {formatIsk((parentNode.buildCostPerUnit * parentNode.quantityNeeded) / parentNode.runs)} per run
+                              {parentNode.outputPerRun.toLocaleString()} per run · {formatIsk(parentNode.buildCostPerUnit * parentNode.outputPerRun)} per run
                             </span>
                           )}
                           {/* This tier's own ME/TE, independent of the
@@ -1082,7 +1087,7 @@ function BuildTreeNestedRow({
             For {node.name}
             {node.outputPerRun != null && node.buildCostPerUnit != null && (
               <span className="industry-build-parent-header-meta">
-                {node.outputPerRun.toLocaleString()} per run · {formatIsk((node.buildCostPerUnit * node.quantityNeeded) / node.runs)} per run
+                {node.outputPerRun.toLocaleString()} per run · {formatIsk(node.buildCostPerUnit * node.outputPerRun)} per run
               </span>
             )}
             {node.activity === "manufacturing" && (
@@ -1858,6 +1863,17 @@ function ProductionCalculator() {
    * the opt-in. */
   const blueprintCostIncluded = blueprintEffectiveCost;
 
+  /** Brand New Item Cost from Market minus the real Total Job Run Cost
+   * (materials + blueprint + job + sub-assembly jobs) - and that first
+   * number is exactly tickedBuildCost, which already excludes anything
+   * unticked in the Build Steps tree as "already have it in stock". So
+   * unticking a material doesn't just lower Build Cost, it raises Profit
+   * by that same amount, same as not having to pay for it would in real
+   * life - no separate "already have this" mechanism needed on top of the
+   * tree's own checkboxes. */
+  const totalJobRunCost = tickedBuildCost + blueprintCostIncluded + (jobCost?.totalJobCost ?? 0) + tickedSubJobCost;
+  const profitVsBuying = pricedTree ? pricedTree.buyCostPerUnit * pricedTree.quantityNeeded - totalJobRunCost : 0;
+
   /** Name\tQuantity per line - the same tab-separated shape EVE's own
    * inventory/contract copy produces, which is exactly what the game's
    * Multibuy paste box expects. Summed by type_id first (collectCheckedItems)
@@ -2117,6 +2133,17 @@ function ProductionCalculator() {
                 </span>
               </div>
             )}
+            {pricedTree && (
+              <div
+                className="market-stat-card industry-ship-cost-card"
+                title="Brand New Item Cost from Market, minus Total Job Run Cost below (which already only counts whatever's still ticked in the Build Steps tree) - uncheck anything you already have in stock and this goes up by exactly what you saved."
+              >
+                <span className="market-stat-label">Profit vs. Buying Outright</span>
+                <span className={`market-stat-value ${profitVsBuying >= 0 ? "wallet-amount-positive" : "wallet-amount-negative"}`}>
+                  {formatIsk(profitVsBuying)}
+                </span>
+              </div>
+            )}
           </div>
         )}
 
@@ -2263,7 +2290,7 @@ function ProductionCalculator() {
             <div className="industry-job-cost-row industry-job-cost-subtotal">
               <span>Total Job Run Cost</span>
               <span className="industry-job-cost-value industry-job-cost-value-total">
-                {formatIsk((tickedBuildCost + blueprintCostIncluded + (jobCost?.totalJobCost ?? 0) + tickedSubJobCost) / pricedTree.quantityNeeded)}
+                {formatIsk(totalJobRunCost / pricedTree.quantityNeeded)}
               </span>
             </div>
             {pricedTree.timeSeconds != null && (
@@ -2308,7 +2335,7 @@ function ProductionCalculator() {
             <div className="industry-job-cost-row industry-job-cost-subtotal">
               <span>Total Job Run Cost</span>
               <span className="industry-job-cost-value industry-job-cost-value-total">
-                {formatIsk(tickedBuildCost + blueprintCostIncluded + (jobCost?.totalJobCost ?? 0) + tickedSubJobCost)}
+                {formatIsk(totalJobRunCost)}
               </span>
             </div>
             {pricedTree.timeSeconds != null && (

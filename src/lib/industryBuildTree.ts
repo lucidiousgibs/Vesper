@@ -160,9 +160,20 @@ async function expand(ctx: BuildContext, typeId: number, name: string, quantityN
   }
 
   const timeSeconds = jobTimeSeconds(activityInfo.time_seconds, runs, te, ctx.options.structureTimeBonus, activity);
-  const buildCostPerUnit = materialCost / quantityNeeded;
+  // materialCost paid for runs * outputPerRun units (a run can't be
+  // partial - 1 run of a 100-per-run R.A.M. blueprint always makes 100),
+  // not just quantityNeeded of them. buildCostPerUnit has to divide by what
+  // actually got produced, not by what was merely needed, or every node
+  // whose runs round up past its real requirement (almost always true
+  // somewhere in a real BOM) reports an inflated per-unit cost. totalCost
+  // then prorates back down to quantityNeeded - the other runs-minus-need
+  // units are real, sellable/stockable surplus, not a sunk cost of *this*
+  // build, the same way leftover stock from a previous run wouldn't be.
+  const unitsProduced = runs * outputPerRun;
+  const buildCostPerUnit = materialCost / unitsProduced;
   const buyTotal = buyCostPerUnit * quantityNeeded;
-  const shouldBuild = materialCost < buyTotal || buyCostPerUnit === 0;
+  const proratedBuildCost = buildCostPerUnit * quantityNeeded;
+  const shouldBuild = proratedBuildCost < buyTotal || buyCostPerUnit === 0;
 
   return {
     typeId,
@@ -173,7 +184,7 @@ async function expand(ctx: BuildContext, typeId: number, name: string, quantityN
     shouldBuild,
     buildCostPerUnit,
     buyCostPerUnit,
-    totalCost: shouldBuild ? materialCost : buyTotal,
+    totalCost: shouldBuild ? proratedBuildCost : buyTotal,
     timeSeconds,
     // Kept regardless of shouldBuild - a "Buy" verdict just means buying
     // beat building on cost, not that the sub-materials don't exist. Always
@@ -237,11 +248,17 @@ export function repriceTree(node: BuildTreeNode, hubPrices: Map<number, number>)
   }
 
   const materialCost = materials.reduce((sum, m) => sum + m.totalCost, 0);
-  const buildCostPerUnit = materialCost / node.quantityNeeded;
+  // Same proration as expand()'s own build-cost math - materialCost paid
+  // for node.runs * outputPerRun units, not just node.quantityNeeded of
+  // them, so per-unit cost (and the totalCost reported up to this node's
+  // parent) both have to account for that before comparing against buying.
+  const unitsProduced = node.runs * (node.outputPerRun ?? 1);
+  const buildCostPerUnit = materialCost / unitsProduced;
   const buyTotal = buyCostPerUnit * node.quantityNeeded;
-  const shouldBuild = materialCost < buyTotal || buyCostPerUnit === 0;
+  const proratedBuildCost = buildCostPerUnit * node.quantityNeeded;
+  const shouldBuild = proratedBuildCost < buyTotal || buyCostPerUnit === 0;
 
-  return { ...node, materials, buyCostPerUnit, buildCostPerUnit, shouldBuild, totalCost: shouldBuild ? materialCost : buyTotal };
+  return { ...node, materials, buyCostPerUnit, buildCostPerUnit, shouldBuild, totalCost: shouldBuild ? proratedBuildCost : buyTotal };
 }
 
 /** Flattens a build tree into total raw/bought material quantities needed across the whole plan - the "shopping list" view, deduped and summed across every branch that ends in a buy decision. */
