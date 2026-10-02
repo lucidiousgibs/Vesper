@@ -3,6 +3,15 @@ import { getRecentActivityKills, pollRecentActivityKills, mergeKillFeeds, type K
 import { useErrorReporter } from "./useErrorReporter";
 
 const POLL_RETRY_DELAY_MS = 5_000;
+/** A long-poll connection sitting idle for up to 60s (killmail.stream's own
+ * /poll/ duration) looks exactly like a dead one to plenty of routers/
+ * firewalls, which silently drop it - a real but transient failure that
+ * self-heals on the very next retry. Surfacing that as a "System Error"
+ * modal on the first attempt was pure noise for something usually gone by
+ * the second retry; only a genuinely persistent outage (still failing
+ * after this many consecutive attempts) is worth interrupting the user
+ * about. */
+const SILENT_RETRY_ATTEMPTS = 2;
 
 interface RecentActivityState {
   kills: KillEntry[];
@@ -67,12 +76,14 @@ export function RecentActivityProvider({ children }: RecentActivityProviderProps
 
   useEffect(() => {
     let active = true;
+    let consecutiveFailures = 0;
 
     async function pollLoop() {
       while (active) {
         try {
           const incoming = await pollRecentActivityKills();
           if (!active) break;
+          consecutiveFailures = 0;
           setLastPolledAt(new Date().toISOString());
           if (incoming.length > 0) {
             setKills((prev) => mergeKillFeeds(prev, incoming));
@@ -82,7 +93,10 @@ export function RecentActivityProvider({ children }: RecentActivityProviderProps
           setLoading(false);
         } catch (err) {
           if (!active) break;
-          reportError(`Live kill stream error: ${String(err)}`);
+          consecutiveFailures++;
+          if (consecutiveFailures > SILENT_RETRY_ATTEMPTS) {
+            reportError(`Live kill stream error: ${String(err)}`);
+          }
           await new Promise((resolve) => setTimeout(resolve, POLL_RETRY_DELAY_MS));
         }
       }

@@ -30,7 +30,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EnumWindows, GetClientRect, GetCursorPos,
     GetForegroundWindow, GetMessageW, GetWindowLongPtrW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
     IsIconic, IsWindowVisible, LoadCursorW, PostMessageW, PostQuitMessage, RegisterClassExW, SetForegroundWindow, SetTimer,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HTBOTTOM,
+    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HTBOTTOM,
     HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HWND_NOTOPMOST, HWND_TOP,
     HWND_TOPMOST, IDC_ARROW, MSG, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_MINIMIZE, SW_RESTORE,
     SW_SHOW, WM_DESTROY, WM_HOTKEY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_SIZE,
@@ -636,7 +636,17 @@ unsafe extern "system" fn preview_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
                         let _ = save_settings(&state.ctx.app, &settings);
                     } else {
                         let target = HWND(state.client_hwnd as *mut _);
-                        let _ = ShowWindow(target, SW_RESTORE);
+                        // Only actually minimized windows need SW_RESTORE - firing
+                        // it unconditionally on every click sends a real restore
+                        // signal even to a client that's already showing normally,
+                        // and EVE's plain "Windowed" mode (unlike "Windowed
+                        // (Fixed)", which can't resize at all) appears to treat
+                        // that as a cue to snap back to a smaller size rather than
+                        // a no-op - reported as clicking between multibox clients
+                        // shrinking them instead of leaving them full-size.
+                        if IsIconic(target).as_bool() {
+                            let _ = ShowWindow(target, SW_RESTORE);
+                        }
                         let _ = SetForegroundWindow(target);
                     }
                 }
@@ -743,6 +753,31 @@ unsafe extern "system" fn controller_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
                             if let Some(preview_hwnd) = create_preview_window(state.ctx.clone(), &class_name, instance, client) {
                                 state.previews.insert(client.hwnd, preview_hwnd.0 as isize);
                             }
+                        } else if let Some(&preview_raw) = state.previews.get(&client.hwnd) {
+                            // A client first seen at the "Character Select" screen
+                            // (before its window title gains the "EVE - Name"
+                            // suffix) got its preview created with that placeholder
+                            // as its label - nothing after creation ever re-checked
+                            // it against the window's live title, so it stayed
+                            // "Character Select" even once the real character name
+                            // became available, only ever fixed by fully closing
+                            // and reopening the overlay (which throws away every
+                            // PreviewState and creates them all fresh). Every tick
+                            // already re-reads the live title via enumerate_eve_clients
+                            // above; this just also applies it to a preview that
+                            // already exists instead of only ones being newly
+                            // created.
+                            let preview_hwnd = HWND(preview_raw as *mut _);
+                            let preview_state = preview_state_ptr(preview_hwnd);
+                            if !preview_state.is_null() {
+                                let fresh_label = label_for(client);
+                                if (*preview_state).label != fresh_label {
+                                    (*preview_state).label = fresh_label.clone();
+                                    let title = to_wide(&fresh_label);
+                                    let _ = SetWindowTextW(preview_hwnd, PCWSTR(title.as_ptr()));
+                                    let _ = InvalidateRect(Some(preview_hwnd), None, true);
+                                }
+                            }
                         }
                     }
 
@@ -797,7 +832,11 @@ unsafe extern "system" fn controller_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
                         let preview_state = preview_state_ptr(preview_hwnd);
                         if !preview_state.is_null() && (*preview_state).label == name {
                             let target = HWND(client_hwnd as *mut _);
-                            let _ = ShowWindow(target, SW_RESTORE);
+                            // Same reasoning as the preview-click handler above -
+                            // only restore a window that's actually minimized.
+                            if IsIconic(target).as_bool() {
+                                let _ = ShowWindow(target, SW_RESTORE);
+                            }
                             let _ = SetForegroundWindow(target);
                             break;
                         }

@@ -14,6 +14,13 @@ import { useTrackedEntries } from "./useTrackedEntries";
 import { useErrorReporter } from "./useErrorReporter";
 
 const POLL_RETRY_DELAY_MS = 5_000;
+/** Same reasoning as useRecentActivity's own copy of this constant - a
+ * long-poll connection sitting idle for up to 60s looks exactly like a dead
+ * one to plenty of routers/firewalls, which silently drop it, and that's
+ * usually gone by the second retry. Only a genuinely persistent outage
+ * (still failing after this many consecutive attempts) is worth
+ * interrupting the user about. */
+const SILENT_RETRY_ATTEMPTS = 2;
 
 interface TrackedSystemsState {
   entries: TrackedEntry[];
@@ -103,19 +110,24 @@ export function TrackedSystemsProvider({ children }: TrackedSystemsProviderProps
     const systemIds = flattenSystemIds(entries);
     if (systemIds.length === 0) return;
     let active = true;
+    let consecutiveFailures = 0;
 
     async function pollLoop() {
       while (active) {
         try {
           const incoming = await pollTrackedSystemKills(systemIds);
           if (!active) break;
+          consecutiveFailures = 0;
           if (incoming.length > 0) {
             setKills((prev) => mergeKillFeeds(prev, incoming, MAX_TRACKED_KILLS));
             setHasSynced(true);
           }
         } catch (err) {
           if (!active) break;
-          reportError(`Live kill stream error: ${String(err)}`);
+          consecutiveFailures++;
+          if (consecutiveFailures > SILENT_RETRY_ATTEMPTS) {
+            reportError(`Live kill stream error: ${String(err)}`);
+          }
           await new Promise((resolve) => setTimeout(resolve, POLL_RETRY_DELAY_MS));
         }
       }
