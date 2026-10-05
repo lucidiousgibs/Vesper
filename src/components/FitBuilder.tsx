@@ -31,6 +31,10 @@ import {
   type SkillEntry,
   type AssetEntry,
 } from "../lib/eve";
+import { useTheme, isPremiumTheme } from "../hooks/useTheme";
+import SegmentBar, { ThreatState } from "./premium/SegmentBar";
+import FittingDial, { type DialSlot } from "./FittingDial";
+import { dialSlotForFitFlag, fitFlagFor, type DialGroup } from "../lib/fittingDial";
 
 const PURPOSES = ["PvP", "PvE", "Exploring", "Industry", "Mining", "Mission", "Other"];
 
@@ -46,7 +50,24 @@ const SLOT_DEFS: { prefix: string; label: string; countKey: keyof ShipStats; slo
   { prefix: "SubSystemSlot", label: "Subsystems", countKey: "subsystem_slots", slotType: "subsystem", tintClass: "" },
 ];
 
-function TypeSearchBox({ placeholder, onPick }: { placeholder: string; onPick: (match: TypeSearchMatch) => void }) {
+const DIAL_SLOT_NAME: Record<DialGroup, string> = {
+  high: "high power slot",
+  mid: "mid power slot",
+  low: "low power slot",
+  rig: "rig slot",
+  subsystem: "subsystem slot",
+};
+
+function TypeSearchBox({
+  placeholder,
+  onPick,
+  accept,
+}: {
+  placeholder: string;
+  onPick: (match: TypeSearchMatch) => void;
+  /** Keeps only the matches that pass, e.g. modules for one rack of slots. */
+  accept?: (match: TypeSearchMatch) => boolean;
+}) {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<TypeSearchMatch[]>([]);
   const [open, setOpen] = useState(false);
@@ -61,8 +82,9 @@ function TypeSearchBox({ placeholder, onPick }: { placeholder: string; onPick: (
     let cancelled = false;
     const timer = setTimeout(() => {
       searchMarketTypes(trimmed)
-        .then((results) => {
+        .then((found) => {
           if (cancelled) return;
+          const results = accept ? found.filter(accept) : found;
           setSuggestions(results);
           setOpen(results.length > 0);
         })
@@ -111,8 +133,43 @@ function TypeSearchBox({ placeholder, onPick }: { placeholder: string; onPick: (
 }
 
 function ResourceGauge({ label, used, total, unit }: { label: string; used: number; total: number; unit?: string }) {
+  const [theme] = useTheme();
+  const premium = isPremiumTheme(theme);
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
   const over = total > 0 && used > total;
+  if (premium && total > 0) {
+    // A bullet graph in segments: the scale runs to 125% of the limit so an overloaded fit
+    // still shows how far over it is, with the zones marked on the unlit cells: fine up to
+    // 90% of the limit, near the limit up to 100%, over it beyond. Word and shape go with it.
+    const tone = used > total ? "critical" : used >= total * 0.9 ? "caution" : "ok";
+    const text = tone === "critical" ? "Over limit" : tone === "caution" ? "Near limit" : "Within limits";
+    return (
+      <div className="fit-gauge">
+        <div className="fit-gauge-labels">
+          <span>{label}</span>
+          <span className={over ? "fit-gauge-value-over" : "fit-gauge-value"}>
+            {used.toLocaleString(undefined, { maximumFractionDigits: 1 })} / {total.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            {unit}
+          </span>
+        </div>
+        <span className="threat-cell">
+          <SegmentBar
+            value={used}
+            max={total * 1.25}
+            bands={[
+              { upTo: total * 0.9, tone: "ok" },
+              { upTo: total, tone: "caution" },
+              { upTo: total * 1.25, tone: "critical" },
+            ]}
+            segments={20}
+            label={`${label} used`}
+            valueText={`${used.toFixed(1)} of ${total.toFixed(1)}${unit ?? ""}, ${text.toLowerCase()}`}
+          />
+          <ThreatState tone={tone} text={text} />
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="fit-gauge">
       <div className="fit-gauge-labels">
@@ -171,6 +228,10 @@ function FitBuilder({
   const [shipStats, setShipStats] = useState<ShipStats | null>(null);
   const [resourceCosts, setResourceCosts] = useState<Map<number, ItemResourceCost>>(new Map());
   const [openFlag, setOpenFlag] = useState<string | null>(null);
+  // The dial has its own module search (opened from an empty slot on the dial), kept apart
+  // from openFlag so the slot lists below never show a second search box for the same slot.
+  const [dialPickFlag, setDialPickFlag] = useState<string | null>(null);
+  const [selectedDialSlot, setSelectedDialSlot] = useState<{ group: DialGroup; index: number } | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["resources", "price"]));
 
   const [marketGroups, setMarketGroups] = useState<MarketGroupNode[] | null>(null);
@@ -246,6 +307,11 @@ function FitBuilder({
       cancelled = true;
     };
   }, [draft.ship_type_id, reportError]);
+
+  useEffect(() => {
+    setDialPickFlag(null);
+    setSelectedDialSlot(null);
+  }, [draft.ship_type_id]);
 
   const distinctItemTypeIds = useMemo(() => Array.from(new Set(draft.items.map((i) => i.type_id))), [draft.items]);
 
@@ -539,10 +605,12 @@ function FitBuilder({
   function setSlotItem(flag: string, typeId: number) {
     setDraft((prev) => ({ ...prev, items: [...prev.items.filter((it) => it.flag !== flag), { type_id: typeId, flag, quantity: 1 }] }));
     setOpenFlag(null);
+    setDialPickFlag(null);
   }
 
   function clearSlot(flag: string) {
     setDraft((prev) => ({ ...prev, items: prev.items.filter((it) => it.flag !== flag) }));
+    setSelectedDialSlot((sel) => (sel && fitFlagFor(sel.group, sel.index) === flag ? null : sel));
   }
 
   function addToFirstEmptySlot(slotType: string, typeId: number) {
@@ -605,7 +673,32 @@ function FitBuilder({
   const cpuUsed = sumCost((it) => poweredFlags.some((p) => it.flag.startsWith(p)), (c) => c.cpu);
   const calibrationUsed = sumCost((it) => it.flag.startsWith("RigSlot"), (c) => c.calibration);
   const droneBayUsed = sumCost((it) => it.flag === "DroneBay", (c) => c.volume);
+  const cargoVolume = sumCost((it) => it.flag === "Cargo", (c) => c.volume);
   const droneBandwidthUsed = sumCost((it) => it.flag === "DroneBay", (c) => c.drone_bandwidth);
+
+  const dialCounts: Record<DialGroup, number> = {
+    high: shipStats?.hi_slots ?? 0,
+    mid: shipStats?.mid_slots ?? 0,
+    low: shipStats?.low_slots ?? 0,
+    rig: shipStats?.rig_slots ?? 0,
+    subsystem: shipStats?.subsystem_slots ?? 0,
+  };
+  const dialSlots: DialSlot[] = [];
+  for (const item of draft.items) {
+    const where = dialSlotForFitFlag(item.flag);
+    if (!where || where.index >= dialCounts[where.group]) continue;
+    dialSlots.push({ ...where, typeId: item.type_id, name: nameFor(item.type_id), quantity: item.quantity });
+  }
+  // Hardpoints in use: only claimed once every fitted high-slot module's type has been looked up,
+  // so a half-loaded fit never shows weapons as missing.
+  const highItems = draft.items.filter((it) => it.flag.startsWith("HiSlot"));
+  const hardpointsKnown = highItems.every((it) => resourceCosts.has(it.type_id));
+  const countHardpoint = (kind: "turret" | "launcher") =>
+    hardpointsKnown ? highItems.filter((it) => resourceCosts.get(it.type_id)?.hardpoint === kind).length : null;
+  const selectedDialItem = selectedDialSlot
+    ? draft.items.find((it) => it.flag === fitFlagFor(selectedDialSlot.group, selectedDialSlot.index)) ?? null
+    : null;
+  const dialPick = dialPickFlag ? dialSlotForFitFlag(dialPickFlag) : null;
 
   return (
     <div className="fit-builder-3pane">
@@ -649,7 +742,7 @@ function FitBuilder({
                 onClick={() => setDraft((p) => ({ ...p, ship_type_id: 0, items: [] }))}
                 title="Clear this ship and search for a different one"
               >
-                <X size={14} strokeWidth={2.5} />
+                <X size={14} strokeWidth={2.5} className="icon-danger" />
               </button>
             </div>
           ) : (
@@ -696,6 +789,80 @@ function FitBuilder({
 
         {draft.ship_type_id > 0 && shipStats && (
           <>
+            <div className="fit-dial-card">
+              <FittingDial
+                shipTypeId={draft.ship_type_id}
+                shipTypeName={nameFor(draft.ship_type_id)}
+                counts={dialCounts}
+                slots={dialSlots}
+                hardpoints={{
+                  turret: { total: shipStats.turret_hardpoints, used: countHardpoint("turret") },
+                  launcher: { total: shipStats.launcher_hardpoints, used: countHardpoint("launcher") },
+                }}
+                calibration={{ label: "Calibration", used: calibrationUsed, total: shipStats.calibration }}
+                power={{ label: "Power Grid", used: powerUsed, total: shipStats.power_output, unit: " MW", note: "Hull output before skills and rig bonuses." }}
+                cpu={{ label: "CPU", used: cpuUsed, total: shipStats.cpu_output, unit: " tf", note: "Hull output before skills and rig bonuses." }}
+                droneBay={{ label: "Drone Bay", used: droneBayUsed, total: shipStats.drone_bay_volume, unit: " m3" }}
+                cargoVolume={cargoVolume}
+                mode="build"
+                selected={dialPick ?? selectedDialSlot}
+                onSlotClick={(slot) => {
+                  const flag = fitFlagFor(slot.group, slot.index);
+                  if (slot.typeId == null) {
+                    setSelectedDialSlot(null);
+                    setDialPickFlag(flag);
+                  } else {
+                    setDialPickFlag(null);
+                    setSelectedDialSlot((sel) => (sel?.group === slot.group && sel.index === slot.index ? null : { group: slot.group, index: slot.index }));
+                  }
+                }}
+                overlay={
+                  dialPick && dialPickFlag ? (
+                    <div className="fit-dial-picker">
+                      <div className="fit-dial-picker-head">
+                        <span>
+                          Fit {DIAL_SLOT_NAME[dialPick.group]} {dialPick.index + 1}
+                        </span>
+                        <button type="button" className="fit-dial-picker-close" onClick={() => setDialPickFlag(null)} aria-label="Close the module search">
+                          <X size={14} strokeWidth={2.5} />
+                        </button>
+                      </div>
+                      <TypeSearchBox
+                        placeholder="Search for a module..."
+                        accept={(match) => match.slot_type === dialPick.group}
+                        onPick={(match) => {
+                          onRegisterName(match.id, match.name);
+                          setSlotItem(dialPickFlag, match.id);
+                        }}
+                      />
+                    </div>
+                  ) : null
+                }
+              />
+              <div className="fit-dial-info">
+                {selectedDialItem ? (
+                  <>
+                    <img src={typeIconUrl(selectedDialItem.type_id)} alt="" className="market-browser-row-icon" />
+                    <span className="fit-dial-info-name">{nameFor(selectedDialItem.type_id)}</span>
+                    {flyabilityBadge(selectedDialItem.type_id)}
+                    {resourceCosts.get(selectedDialItem.type_id) && (
+                      <span className="fit-dial-info-cost">
+                        {selectedDialSlot?.group === "rig"
+                          ? `${resourceCosts.get(selectedDialItem.type_id)!.calibration.toLocaleString(undefined, { maximumFractionDigits: 1 })} calibration`
+                          : `${resourceCosts.get(selectedDialItem.type_id)!.power.toLocaleString(undefined, { maximumFractionDigits: 1 })} MW · ${resourceCosts.get(selectedDialItem.type_id)!.cpu.toLocaleString(undefined, { maximumFractionDigits: 1 })} tf`}
+                      </span>
+                    )}
+                    <button type="button" className="fit-dial-info-remove" onClick={() => clearSlot(selectedDialItem.flag)}>
+                      <Trash2 size={12} strokeWidth={2} />
+                      Remove
+                    </button>
+                  </>
+                ) : (
+                  <span className="fit-dial-info-hint">Click an empty slot to fit a module, or a fitted module to see its cost and remove it.</span>
+                )}
+              </div>
+            </div>
+
             {SLOT_DEFS.map((def) => {
               const count = shipStats[def.countKey];
               if (count === 0) return null;

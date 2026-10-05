@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
 import { getLocationKills, type KillEntry } from "../lib/kills";
 import KillFeedTable from "./KillFeedTable";
+import KillTimeline from "./premium/KillTimeline";
 import BackToMapButton from "./BackToMapButton";
 import TrackToggleButton from "./TrackToggleButton";
 import type { SystemSummary } from "./SystemKillboard";
@@ -100,6 +101,8 @@ function GateKillboard({
           ) : kills.length === 0 ? (
             <p className="detail-empty">No recent kills recorded at this gate.</p>
           ) : (
+            <>
+            <KillTimeline kills={kills} subject="This gate" />
             <KillFeedTable
               kills={kills}
               onSelectKill={onSelectKill}
@@ -108,6 +111,7 @@ function GateKillboard({
               onSelectCorporation={onSelectCorporation}
               onSelectAlliance={onSelectAlliance}
             />
+            </>
           )}
         </div>
       </div>

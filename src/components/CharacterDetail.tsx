@@ -80,6 +80,9 @@ import { getCachedOverview, setCachedOverview, isTransientServerError } from "..
 import KillFeedTable from "./KillFeedTable";
 import CloneStateBadge from "./CloneStateBadge";
 import { useTheme, isPremiumTheme } from "../hooks/useTheme";
+import TimerBar from "./premium/TimerBar";
+import RollingNumber from "./premium/RollingNumber";
+import JobLanes from "./premium/JobLanes";
 import PremiumCharacterHeader from "./premium/PremiumCharacterHeader";
 import type { SystemSummary } from "./SystemKillboard";
 import type { CorporationSummary } from "./CorporationKillboard";
@@ -1672,6 +1675,8 @@ function CharacterDetail({
         ) : industryJobs.entries.length === 0 ? (
           <p className="detail-empty">No industry jobs found.</p>
         ) : (
+          <>
+          <JobLanes jobs={industryJobs.entries} />
           <div className="data-table-wrap">
             <table className="data-table">
               <thead>
@@ -1694,12 +1699,16 @@ function CharacterDetail({
                     <td>{j.status}</td>
                     <td className="data-table-numeric">{fmtCount(j.runs)}</td>
                     <td>{j.station_name}</td>
-                    <td>{fmtDate(j.end_date)}</td>
+                    <td>
+                      {fmtDate(j.end_date)}
+                      {j.status === "active" && <TimerBar start={j.start_date} end={j.end_date} label={`${j.activity_name} job progress`} />}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </>
         );
 
       case "wallet":
@@ -1708,7 +1717,7 @@ function CharacterDetail({
             <div className="wallet-balance-row">
               <div className="wallet-balance-card">
                 <p className="eyebrow">ISK Balance</p>
-                <h2>{overview?.isk_balance != null ? formatIsk(overview.isk_balance) : "—"}</h2>
+                <h2>{overview?.isk_balance != null ? <RollingNumber id={`wallet-${character.id}`} value={overview.isk_balance} format={formatIsk} /> : "—"}</h2>
               </div>
               {walletJournal && walletJournal.entries.length > 0 && (
                 <button type="button" className="skill-action-btn" onClick={exportWalletCsv}>

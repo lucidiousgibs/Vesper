@@ -57,7 +57,7 @@
 :root[data-tier="premium"] .data-table-numeric {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 4px currentColor;
+  text-shadow: 0 0 calc(4px * var(--fx-glow-k, 1)) currentColor;
 }
 
 /* ---------------------------------------------------------------------------
@@ -267,7 +267,7 @@
   font-size: 10px;
   letter-spacing: 0.15em;
   color: var(--accent);
-  text-shadow: 0 0 6px currentColor;
+  text-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) currentColor;
   pointer-events: none;
   opacity: 0;
   animation: premium-boot-label 340ms steps(2, end) 1;
@@ -339,7 +339,7 @@
 
 :root[data-tier="premium"] .nav-item-active::before {
   background: var(--accent);
-  box-shadow: 0 0 5px 2px var(--accent), 0 0 10px 4px var(--accent);
+  box-shadow: 0 0 calc(5px * var(--fx-glow-k, 1)) calc(2px * var(--fx-glow-k, 1)) var(--accent), 0 0 calc(10px * var(--fx-glow-k, 1)) calc(4px * var(--fx-glow-k, 1)) var(--accent);
   animation: premium-crt-flicker 9.5s steps(1, end) infinite;
 }
 
@@ -473,12 +473,12 @@
 
 :root[data-tier="premium"] .status-lamp-lit.status-lamp-online .status-lamp-core {
   background-color: var(--success);
-  box-shadow: 0 0 6px 2px var(--success), 0 0 14px 4px var(--success);
+  box-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) calc(2px * var(--fx-glow-k, 1)) var(--success), 0 0 calc(14px * var(--fx-glow-k, 1)) calc(4px * var(--fx-glow-k, 1)) var(--success);
 }
 
 :root[data-tier="premium"] .status-lamp-lit.status-lamp-warning .status-lamp-core {
   background-color: var(--warning);
-  box-shadow: 0 0 6px 2px var(--warning), 0 0 14px 4px var(--warning);
+  box-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) calc(2px * var(--fx-glow-k, 1)) var(--warning), 0 0 calc(14px * var(--fx-glow-k, 1)) calc(4px * var(--fx-glow-k, 1)) var(--warning);
 }
 
 /* "Needs a look, not urgent" tier - deliberately --isk rather than
@@ -488,12 +488,12 @@
    --accent there instead of --warning like the other 3 decks do). */
 :root[data-tier="premium"] .status-lamp-lit.status-lamp-attention .status-lamp-core {
   background-color: var(--isk);
-  box-shadow: 0 0 6px 2px var(--isk), 0 0 14px 4px var(--isk);
+  box-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) calc(2px * var(--fx-glow-k, 1)) var(--isk), 0 0 calc(14px * var(--fx-glow-k, 1)) calc(4px * var(--fx-glow-k, 1)) var(--isk);
 }
 
 :root[data-tier="premium"] .status-lamp-lit.status-lamp-danger .status-lamp-core {
   background-color: var(--danger);
-  box-shadow: 0 0 6px 2px var(--danger), 0 0 14px 4px var(--danger);
+  box-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) calc(2px * var(--fx-glow-k, 1)) var(--danger), 0 0 calc(14px * var(--fx-glow-k, 1)) calc(4px * var(--fx-glow-k, 1)) var(--danger);
 }
 
 :root[data-tier="premium"] .status-lamp-blink {
@@ -860,7 +860,7 @@
 :root[data-tier="premium"] .error-modal h3 {
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  text-shadow: 0 0 6px currentColor;
+  text-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) currentColor;
 }
 
 :root[data-tier="premium"] .error-modal button {
@@ -1249,7 +1249,7 @@
      raster on top via body::after - see cold-ballast.css - that one, not
      this one, was the real source of the map looking hazy/muted next to a
      reference screenshot; this shared one was already faint.) */
-  background-image: repeating-linear-gradient(rgba(255, 255, 255, 0.02) 0px, rgba(255, 255, 255, 0.02) 1px, transparent 1px, transparent 3px);
+  background-image: repeating-linear-gradient(rgba(255, 255, 255, calc(0.02 * var(--fx-scan-k, 1))) 0px, rgba(255, 255, 255, calc(0.02 * var(--fx-scan-k, 1))) 1px, transparent 1px, transparent 3px);
 }
 
 :root[data-tier="premium"] .map-hud-corner {
@@ -1257,7 +1257,7 @@
   width: 26px;
   height: 26px;
   border: 2px solid transparent;
-  filter: drop-shadow(0 0 3px var(--accent-soft));
+  filter: drop-shadow(0 0 calc(3px * var(--fx-glow-k, 1)) var(--accent-soft));
   opacity: 0.8;
 }
 
@@ -1410,7 +1410,7 @@
   letter-spacing: 0.08em;
   color: var(--accent);
   opacity: 0.75;
-  text-shadow: 0 0 4px var(--accent);
+  text-shadow: 0 0 calc(4px * var(--fx-glow-k, 1)) var(--accent);
   pointer-events: none;
   z-index: 6;
 }
@@ -1434,7 +1434,7 @@
   width: 16px;
   height: 16px;
   border: 2px solid var(--accent);
-  filter: drop-shadow(0 0 4px var(--accent));
+  filter: drop-shadow(0 0 calc(4px * var(--fx-glow-k, 1)) var(--accent));
 }
 
 :root[data-tier="premium"] .map-lock-on-corner-tl {

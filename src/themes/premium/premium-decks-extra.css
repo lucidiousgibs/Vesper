@@ -1,0 +1,467 @@
+/* ============================================================================
+   EXTRA PREMIUM DECKS - per-deck variables and signature effects
+   ============================================================================
+   Tokens are in premium-tokens-extra.css (generated from the research palettes);
+   shared geometry is in premium-glass.css and premium-terminal.css. This file
+   holds what makes each deck itself: its family variables, its boot label, and
+   one or two signature touches. Everything animated follows the Motion setting;
+   everything that glows scales with Glow and CRT.
+
+   Families
+     glass     Cybernetic, Deep Space, Cyberpunk Neon, Corporate Future, Alien Biotech
+     terminal  Amber Command, White Phosphor
+     hardware  Capsuleer Tactical, Mecha Command Alert, 90s Mecha, Cassette Deck
+               (these ride the shared premium hardware structure directly)
+   ============================================================================ */
+
+/* ---- Family variables ---- */
+:root[data-theme="cybernetic"] {
+  --glass-edge: 52%;
+  --glass-edge-w: 1.5px;
+  --glass-rule-glow: 12px;
+  --head-glyph: "// ";
+}
+
+:root[data-theme="deep-space"] {
+  --glass-edge: 12%;
+  --glass-rule: 38%;
+  --glass-rule-glow: 0px;
+}
+
+:root[data-theme="cyber-neon"] {
+  --glass-edge: 62%;
+  --glass-rule-glow: 22px;
+  --head-glyph: "\2039\00a0";
+}
+
+:root[data-theme="corporate-future"] {
+  --glass-edge: 22%;
+  --glass-button-radius: 6px;
+  --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.38);
+  --glass-rule: 45%;
+  --glass-rule-glow: 0px;
+}
+
+:root[data-theme="biotech"] {
+  --glass-edge: 36%;
+  --glass-button-radius: 10px 3px 10px 3px;
+  --glass-rule-glow: 14px;
+}
+
+:root[data-theme="amber-command"] {
+  --term-prompt: "\00bb\00a0";
+  --term-badge-style: double;
+  --term-raster-rgb: 12, 6, 0;
+}
+
+:root[data-theme="white-phosphor"] {
+  --term-prompt: "$ ";
+  --term-badge-style: solid;
+  --term-raster-rgb: 10, 10, 10;
+}
+
+:root[data-theme="tactical"] {
+  --head-glyph: "TGT\00a0\25B8\00a0";
+  /* Flat matte plates: the shared hardware bevel, turned right down. */
+  --deck-bevel-dark: rgba(0, 0, 0, 0.35);
+  --deck-bevel-light: rgba(211, 166, 44, 0.04);
+}
+
+:root[data-theme="mecha-90"] {
+  --head-glyph: "\25A0\00a0";
+}
+
+:root[data-theme="mecha-alert"] {
+  --head-glyph: "\25B6\00a0";
+}
+
+/* ---- A short glyph before page titles on the decks that carry one ---- */
+:root:is(
+    [data-theme="tactical"],
+    [data-theme="cybernetic"],
+    [data-theme="cyber-neon"],
+    [data-theme="mecha-90"],
+    [data-theme="mecha-alert"]
+  )
+  :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  )
+  h2::before {
+  content: var(--head-glyph);
+  color: var(--accent);
+  font-family: var(--font-label);
+  text-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) var(--accent);
+}
+
+/* ---- Boot labels: the ignition flash text each deck shows on a page change ---- */
+:root[data-theme="tactical"] .main::before {
+  content: "TAC NET \2014  LINK OK";
+}
+:root[data-theme="amber-command"] .main::before {
+  content: "CONSOLE \2014  READY";
+}
+:root[data-theme="cybernetic"] .main::before {
+  content: "DIAG \2014  SCAN OK";
+}
+:root[data-theme="mecha-alert"] .main::before {
+  content: "ALERT \2014  STANDBY";
+}
+:root[data-theme="deep-space"] .main::before {
+  content: "WATCH \2014  QUIET";
+}
+:root[data-theme="cyber-neon"] .main::before {
+  content: "NET \2014  JACKED IN";
+}
+:root[data-theme="corporate-future"] .main::before {
+  content: "FACTION LINK \2014  SECURE";
+}
+:root[data-theme="biotech"] .main::before {
+  content: "CULTURE \2014  VIABLE";
+}
+:root[data-theme="mecha-90"] .main::before {
+  content: "COCKPIT \2014  SYSTEMS GREEN";
+}
+:root[data-theme="white-phosphor"] .main::before {
+  content: "TTY1 \2014  READY";
+}
+:root[data-theme="cassette-deck"] .main::before {
+  content: "TAPE \2014  LOADED";
+}
+
+/* ============================================================================
+   CAPSULEER TACTICAL - range rings on the map
+   ============================================================================ */
+:root[data-theme="tactical"] .map-canvas-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: repeating-radial-gradient(
+    circle at 50% 50%,
+    transparent 0 139px,
+    color-mix(in srgb, var(--accent) 10%, transparent) 139px 140px
+  );
+}
+
+/* ============================================================================
+   MECHA COMMAND ALERT - hazard bands, heavy frames, hard cuts
+   ============================================================================ */
+:root[data-theme="mecha-alert"] :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  ) {
+  border-bottom: 6px solid transparent;
+  border-image: repeating-linear-gradient(-45deg, var(--warning) 0 9px, var(--bg) 9px 18px) 0 0 6 0;
+}
+
+:root[data-theme="mecha-alert"] .screen-housing {
+  border-width: 3px;
+}
+
+:root[data-theme="mecha-alert"] .annunciator {
+  border-width: 2px;
+}
+
+:root[data-theme="mecha-alert"] .nav-item-active {
+  background: linear-gradient(90deg, var(--accent-soft), transparent 85%), var(--deck-cavity);
+  box-shadow: inset 6px 0 0 var(--accent);
+}
+
+/* Hard cut on a page change, no soft flicker. */
+:root[data-theme="mecha-alert"] .main {
+  animation-timing-function: steps(2, end);
+}
+
+/* ============================================================================
+   90S MECHA - double-line schematic frames
+   ============================================================================ */
+:root[data-theme="mecha-90"] .screen-housing,
+:root[data-theme="mecha-90"] .annunciator {
+  border: 3px double var(--deck-frame);
+}
+
+:root[data-theme="mecha-90"] .topbar {
+  border-bottom: 2px dashed color-mix(in srgb, var(--deck-accent2) 60%, transparent);
+}
+
+/* ============================================================================
+   AMBER COMMAND - double-line console frames
+   ============================================================================ */
+:root[data-theme="amber-command"] .screen-housing,
+:root[data-theme="amber-command"] .annunciator {
+  border: 3px double var(--deck-bezel);
+  border-radius: 0;
+}
+
+:root[data-theme="amber-command"] .sidebar {
+  border-right: 3px double var(--deck-bezel);
+}
+
+/* ============================================================================
+   WHITE PHOSPHOR - thin single lines, no fills
+   ============================================================================ */
+:root[data-theme="white-phosphor"] .screen-housing,
+:root[data-theme="white-phosphor"] .annunciator {
+  background: transparent;
+  border: 1px solid var(--deck-frame);
+  box-shadow: none;
+}
+
+:root[data-theme="white-phosphor"] button:not(.nav-item):not(.mechanical-button):not(:disabled) {
+  background: transparent;
+  border: 1px solid var(--deck-frame);
+  box-shadow: none;
+}
+
+:root[data-theme="white-phosphor"] button:not(.nav-item):not(.mechanical-button):not(:disabled):hover {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+  box-shadow: none;
+}
+
+:root[data-theme="white-phosphor"] button:not(.nav-item):not(.mechanical-button):not(:disabled):active {
+  transform: none;
+}
+
+/* ============================================================================
+   CASSETTE DECK - embossed label strips
+   ============================================================================ */
+:root[data-theme="cassette-deck"] :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  ) h2 {
+  display: inline-block;
+  padding: 2px 12px;
+  background: var(--deck-bezel);
+  color: #16160f;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:root[data-theme="cassette-deck"] .sidebar {
+  border-right: 3px solid var(--deck-frame);
+}
+
+/* ============================================================================
+   CYBERNETIC - gold-to-cyan scan edge under the topbar
+   ============================================================================ */
+:root[data-theme="cybernetic"] .topbar {
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, var(--accent), var(--deck-accent2) 70%, transparent) 1;
+}
+
+/* ============================================================================
+   DEEP SPACE - a sparse star field behind the shell
+   ============================================================================ */
+:root[data-theme="deep-space"] .shell {
+  background-image:
+    radial-gradient(1px 1px at 8% 14%, rgba(196, 208, 228, 0.5), transparent 60%),
+    radial-gradient(1px 1px at 21% 63%, rgba(196, 208, 228, 0.35), transparent 60%),
+    radial-gradient(1.5px 1.5px at 34% 29%, rgba(219, 230, 244, 0.45), transparent 60%),
+    radial-gradient(1px 1px at 47% 82%, rgba(196, 208, 228, 0.4), transparent 60%),
+    radial-gradient(1px 1px at 58% 9%, rgba(196, 208, 228, 0.5), transparent 60%),
+    radial-gradient(1.5px 1.5px at 69% 51%, rgba(219, 230, 244, 0.35), transparent 60%),
+    radial-gradient(1px 1px at 77% 88%, rgba(196, 208, 228, 0.45), transparent 60%),
+    radial-gradient(1px 1px at 88% 24%, rgba(196, 208, 228, 0.4), transparent 60%),
+    radial-gradient(1px 1px at 93% 71%, rgba(196, 208, 228, 0.5), transparent 60%),
+    radial-gradient(1px 1px at 15% 91%, rgba(196, 208, 228, 0.35), transparent 60%),
+    radial-gradient(1.5px 1.5px at 41% 46%, rgba(219, 230, 244, 0.3), transparent 60%),
+    radial-gradient(1px 1px at 63% 33%, rgba(196, 208, 228, 0.3), transparent 60%);
+}
+
+/* ============================================================================
+   CYBERPUNK NEON - glitch on page change, magenta edge glow, lit titles
+   ============================================================================ */
+:root[data-theme="cyber-neon"] .main {
+  animation: neon-glitch 160ms steps(4, end) 1;
+}
+
+@keyframes neon-glitch {
+  0% {
+    opacity: 0.35;
+    transform: translateX(-4px);
+    filter: hue-rotate(-30deg) brightness(1.6);
+  }
+  25% {
+    opacity: 1;
+    transform: translateX(3px);
+    filter: hue-rotate(20deg) brightness(0.8);
+  }
+  50% {
+    transform: translateX(-2px);
+    filter: brightness(1.3);
+  }
+  75% {
+    transform: translateX(1px);
+    filter: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+:root[data-theme="cyber-neon"] .topbar {
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, var(--accent), var(--deck-accent2)) 1;
+}
+
+:root[data-theme="cyber-neon"] .sidebar {
+  box-shadow: 1px 0 calc(14px * var(--fx-glow-k, 1)) color-mix(in srgb, var(--deck-accent2) 55%, transparent);
+}
+
+:root[data-theme="cyber-neon"] :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  ) h2 {
+  text-shadow: 0 0 calc(10px * var(--fx-glow-k, 1)) color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+/* ============================================================================
+   CORPORATE FUTURE - rounded map frame
+   ============================================================================ */
+:root[data-theme="corporate-future"] .map-canvas-wrap {
+  border-radius: 10px;
+}
+
+/* ============================================================================
+   ALIEN BIOTECH - irregular map frame and a slow breathing mist
+   ============================================================================ */
+:root[data-theme="biotech"] .map-canvas-wrap {
+  border-radius: 20px 4px 20px 4px;
+}
+
+:root[data-theme="biotech"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 18% 92%, rgba(185, 227, 140, calc(0.1 * var(--fx-crt-k, 1))), transparent 55%),
+    radial-gradient(ellipse at 86% 8%, rgba(228, 238, 61, calc(0.06 * var(--fx-crt-k, 1))), transparent 50%);
+  animation: bio-breathe 9s ease-in-out infinite;
+}
+
+@keyframes bio-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Ambient, so it stops below Motion Full. */
+:root[data-theme="biotech"][data-fx-motion="low"] body::after,
+:root[data-theme="biotech"][data-fx-motion="off"] body::after {
+  animation: none;
+}
+
+/* ============================================================================
+   WIDE FACES - keep pilot names and ISK balances on one line
+   ============================================================================
+   White Phosphor sets its display type in a monospace and Cyberpunk Neon in
+   Orbitron, both wider than the faces the dashboard cards were sized for, so
+   those two lines are eased down a size rather than truncated or wrapped. */
+:root[data-theme="white-phosphor"] .character-card-name,
+:root[data-theme="white-phosphor"] .character-card-isk {
+  font-size: 13px;
+  letter-spacing: -0.03em;
+}
+
+:root[data-theme="cyber-neon"] .character-card-name,
+:root[data-theme="cyber-neon"] .character-card-isk {
+  font-size: 15px;
+}
+
+/* ============================================================================
+   SEVEN-SEGMENT READOUT (SegmentDisplay) - used for the EVE clock on Amber
+   Command and Cassette Deck. Lit segments take the accent and the Glow setting;
+   unlit ones stay faintly visible like a real LED display.
+   ============================================================================ */
+.segment-display {
+  display: block;
+  height: 20px;
+  width: auto;
+  overflow: visible;
+}
+
+.segment-display-on {
+  fill: var(--accent);
+  filter: drop-shadow(0 0 calc(3px * var(--fx-glow-k, 1)) var(--accent));
+}
+
+.segment-display-off {
+  fill: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.segment-display-colon circle {
+  fill: var(--accent);
+  filter: drop-shadow(0 0 calc(3px * var(--fx-glow-k, 1)) var(--accent));
+}
+
+:root[data-theme="amber-command"] .eve-time-value,
+:root[data-theme="cassette-deck"] .eve-time-value {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ---- Bulkhead: stencilled section labels ----------------------------------------------
+   Panel and section labels are cut like painted-on stencil: a stencil face, heavy tracking,
+   all caps. Only labels, never body text or data. */
+:root[data-theme="bulkhead"] .screen-housing-title,
+:root[data-theme="bulkhead"] .telemetry-rail-label,
+:root[data-theme="bulkhead"] .technical-label,
+:root[data-theme="bulkhead"] .eyebrow {
+  font-family: "Stardos Stencil", "Oswald", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+/* ---- Cassette Deck: a screw head in each corner of a housing --------------------------- */
+:root[data-theme="cassette-deck"] .screen-housing {
+  background-image:
+    radial-gradient(circle at 7px 7px, var(--deck-rivet) 0 2px, transparent 2.5px),
+    radial-gradient(circle at calc(100% - 7px) 7px, var(--deck-rivet) 0 2px, transparent 2.5px),
+    radial-gradient(circle at 7px calc(100% - 7px), var(--deck-rivet) 0 2px, transparent 2.5px),
+    radial-gradient(circle at calc(100% - 7px) calc(100% - 7px), var(--deck-rivet) 0 2px, transparent 2.5px);
+  background-repeat: no-repeat;
+}

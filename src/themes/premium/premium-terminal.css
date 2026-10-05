@@ -1,0 +1,155 @@
+/* ============================================================================
+   TERMINAL FAMILY - shared geometry for text-mode decks
+   ============================================================================
+   Decks that opt in with family "terminal" in useTheme.ts: Amber Command and
+   White Phosphor. (Phosphor Green predates this file and keeps its own.) The
+   look is a ship terminal: a shell prompt and block cursor on every page
+   title, dashed or double terminal frames on instrument badges, a lit strip on
+   the active nav row, inverse-colour selection, and a thin scan raster behind
+   everything. Each deck tunes it with variables:
+
+     --term-prompt        the prompt string before page titles (default "> ")
+     --term-cursor        inline-block to show the block cursor, none to hide it
+     --term-badge-style   dashed | double | solid, for the topbar badge frames
+     --term-raster-rgb    "r, g, b" of the raster and vignette tint
+
+   The cursor blinks only at Motion Full and rests as a steady block below it.
+   The raster and vignette follow the Scanlines and CRT settings.
+   ============================================================================ */
+
+:root[data-family="terminal"]
+  :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  )
+  h2::before {
+  content: var(--term-prompt, "> ");
+  color: var(--accent);
+  text-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) var(--accent);
+}
+
+:root[data-family="terminal"]
+  :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  )
+  h2::after {
+  content: "";
+  display: var(--term-cursor, inline-block);
+  width: 0.55em;
+  height: 0.95em;
+  margin-left: 6px;
+  vertical-align: -0.1em;
+  background: var(--accent);
+  box-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) var(--accent);
+  animation: terminal-cursor 1.06s steps(1, end) infinite;
+}
+
+@keyframes terminal-cursor {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  56%,
+  100% {
+    opacity: 0;
+  }
+}
+
+:root[data-family="terminal"][data-fx-motion="low"]
+  :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  )
+  h2::after,
+:root[data-family="terminal"] body[data-reduce-motion="true"]
+  :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  )
+  h2::after {
+  animation: none;
+}
+
+/* Terminal frames on the topbar instrument badges. */
+:root[data-family="terminal"] .server-status-badge,
+:root[data-family="terminal"] .capsuleers-online-badge,
+:root[data-family="terminal"] .account-trigger,
+:root[data-family="terminal"] .eve-time-clock,
+:root[data-family="terminal"] .location-tracker-current {
+  border: 1px var(--term-badge-style, dashed) var(--deck-bezel);
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px var(--deck-cavity);
+}
+
+:root[data-family="terminal"] .brand-divider {
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--accent) 0 2px, transparent 2px 6px);
+}
+
+:root[data-family="terminal"] .sidebar {
+  border-right: 2px solid var(--deck-frame);
+  box-shadow: inset -1px 0 0 var(--deck-bevel-light);
+}
+
+/* The active nav row reads as a lit strip: a soft fill fading out to the right,
+   layered under the shared energised rail and lamp. Background only, so the
+   shared box-shadow stays untouched. */
+:root[data-family="terminal"] .nav-item-active {
+  background: linear-gradient(90deg, var(--accent-soft), transparent 85%), var(--deck-cavity);
+}
+
+:root[data-family="terminal"] ::selection {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* Thin scan raster plus a tinted vignette over the whole screen. Kept light:
+   an earlier, heavier raster read as haze over the map, so heavier texture is
+   left to the optional Grain setting. */
+:root[data-family="terminal"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      rgba(0, 0, 0, 0) 0 3px,
+      rgba(var(--term-raster-rgb, 0, 12, 4), calc(0.08 * var(--fx-scan-k, 1))) 3px 4px
+    ),
+    radial-gradient(ellipse at center, transparent 58%, rgba(var(--term-raster-rgb, 0, 10, 4), calc(0.5 * var(--fx-crt-k, 1))) 100%);
+  mix-blend-mode: multiply;
+}

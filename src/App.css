@@ -710,6 +710,15 @@ select {
   transition: border-color var(--transition-fast), background-color var(--transition-fast);
 }
 
+/* Anything that removes or deletes reads as destructive at a glance: every
+   bin icon app-wide, plus any X that removes or clears an item (tagged
+   icon-danger where it's used). A plain "close this dialog" X is
+   deliberately left untagged - closing and deleting shouldn't look alike. */
+svg.lucide-trash-2,
+svg.icon-danger {
+  color: var(--danger);
+}
+
 select:hover {
   border-color: var(--border-active);
   background-color: var(--bg-elevated);
@@ -7036,7 +7045,8 @@ body[data-reduce-motion="true"] .skill-queue-progress-fill {
 
 .kills-row {
   display: grid;
-  grid-template-columns: 90px 190px 150px minmax(0, 1fr) 130px minmax(0, 1fr);
+  /* The ISK column fits a multi-billion value with cents ("4,002,075,537.48 ISK"). */
+  grid-template-columns: 90px 190px 150px minmax(0, 1fr) 172px minmax(0, 1fr);
   align-items: center;
   gap: 16px;
   padding: 12px 0;
@@ -7900,152 +7910,349 @@ body[data-reduce-motion="true"] .skeleton-row {
   color: var(--text-muted);
 }
 
-/* Fit wheel */
+/* Fitting dial: the round ship-fitting display from EVE's fitting window. Drawn as one SVG so it
+   scales with its panel; every colour is a theme token, so it follows whichever theme is active. */
 
-.fit-wheel {
+.fit-dial-wrap {
   position: relative;
-  margin: 0 auto;
-  max-width: 100%;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: radial-gradient(
-    circle,
-    var(--bg-elevated) 0%,
-    var(--bg-elevated) 38%,
-    var(--bg-elevated-2) 39%,
-    var(--bg-elevated-2) 100%
-  );
-}
-
-.fit-wheel-ship {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 128px;
-  height: 128px;
-  object-fit: contain;
-  filter: drop-shadow(0 0 18px rgba(0, 0, 0, 0.5));
-}
-
-.fit-wheel-empty {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, 90px);
   width: 100%;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 15px;
+  max-width: 640px;
+  margin: 0 auto;
 }
 
-.fit-wheel-slot {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-active);
-  background: var(--bg-elevated);
-  box-shadow: 0 0 0 3px var(--bg);
+.fit-dial {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
 }
 
-.fit-wheel-slot img {
-  width: 30px;
-  height: 30px;
-  border-radius: 3px;
-  object-fit: cover;
+.fit-dial-frame {
+  fill: none;
+  stroke: var(--border-active);
+  stroke-width: 1.5;
 }
 
-.fit-wheel-slot-high {
-  border-color: color-mix(in srgb, var(--danger) 55%, var(--border-active));
+.fit-dial-disc-rim {
+  fill: none;
+  stroke: var(--border-active);
+  stroke-width: 1.5;
 }
 
-.fit-wheel-slot-mid {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-active));
+.fit-dial-glow-in {
+  stop-color: var(--bg-elevated-2);
 }
 
-.fit-wheel-slot-low {
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--border-active));
+.fit-dial-glow-out {
+  stop-color: var(--bg);
 }
 
-.fit-wheel-slot-rig {
-  border-color: color-mix(in srgb, var(--text-secondary) 55%, var(--border-active));
+.fit-dial-slot-frame {
+  fill: var(--bg-elevated);
+  stroke: var(--border-active);
+  stroke-width: 1.5;
+  transition: stroke var(--transition-fast);
 }
 
-.fit-wheel-slot-drone {
-  border-color: color-mix(in srgb, var(--success) 55%, var(--border-active));
+.fit-dial-slot-high .fit-dial-slot-frame {
+  stroke: color-mix(in srgb, var(--slot-high) 75%, var(--border-active));
 }
 
-.fit-wheel-slot-destroyed {
-  box-shadow: 0 0 0 3px var(--bg), 0 0 10px var(--danger-soft);
+.fit-dial-slot-mid .fit-dial-slot-frame {
+  stroke: color-mix(in srgb, var(--slot-mid) 75%, var(--border-active));
 }
 
-.fit-wheel-slot-dropped {
-  box-shadow: 0 0 0 3px var(--bg), 0 0 10px var(--success-soft);
+.fit-dial-slot-low .fit-dial-slot-frame {
+  stroke: color-mix(in srgb, var(--slot-low) 75%, var(--border-active));
 }
 
-.fit-wheel-slot-qty {
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--bg-elevated-2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-family: var(--font-label);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.5;
+.fit-dial-slot-rig .fit-dial-slot-frame,
+.fit-dial-slot-subsystem .fit-dial-slot-frame {
+  stroke: color-mix(in srgb, var(--text-secondary) 65%, var(--border-active));
 }
 
-.fit-wheel-ammo-slot {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--bg-elevated-2);
+.fit-dial-slot-empty .fit-dial-slot-frame {
+  fill: var(--bg);
+  stroke-dasharray: 3 3;
   opacity: 0.85;
 }
 
-.fit-wheel-ammo-slot img {
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
-  object-fit: cover;
+.fit-dial-plus {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.6;
+  stroke-linecap: round;
 }
 
-/* Every icon in the wheel (ship, module, ammo) opens that item on the
-   Market Browser - same hover/focus affordance regardless of which of the
-   three very differently-styled elements above it's applied to. */
-.fit-wheel-clickable {
+.fit-dial-slot-destroyed .fit-dial-slot-frame {
+  stroke: var(--danger);
+  stroke-width: 2.2;
+}
+
+.fit-dial-slot-dropped .fit-dial-slot-frame {
+  stroke: var(--success);
+  stroke-width: 2.2;
+}
+
+.fit-dial-slot-state {
+  font-family: var(--font-label);
+  font-size: 12px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+}
+
+.fit-dial-slot-destroyed .fit-dial-slot-state {
+  fill: var(--danger);
+}
+
+.fit-dial-slot-dropped .fit-dial-slot-state {
+  fill: var(--success);
+}
+
+.fit-dial-slot-qty {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 700;
+  fill: var(--text);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+}
+
+.fit-dial-slot-selected .fit-dial-slot-frame {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.fit-dial-clickable {
   cursor: pointer;
-  transition: transform var(--transition-fast), border-color var(--transition-fast), filter var(--transition-fast);
 }
 
-.fit-wheel-clickable:hover {
-  transform: translate(-50%, -50%) scale(1.12);
-  border-color: var(--accent);
-  z-index: 1;
+.fit-dial-clickable:hover .fit-dial-slot-frame {
+  stroke: var(--accent);
 }
 
-.fit-wheel-clickable:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 2px;
+.fit-dial-slot:focus-visible,
+.fit-dial-ammo:focus-visible,
+.fit-dial-ship:focus-visible {
+  outline: none;
 }
 
-img.fit-wheel-clickable:hover {
-  transform: translate(-50%, -50%) scale(1.06);
-  filter: drop-shadow(0 0 18px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 10px var(--accent-soft));
+.fit-dial-slot:focus-visible .fit-dial-slot-frame {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.fit-dial-ship.fit-dial-clickable:hover {
+  filter: drop-shadow(0 0 10px var(--accent-soft));
+}
+
+.fit-dial-ship:focus-visible {
+  filter: drop-shadow(0 0 10px var(--accent));
+}
+
+.fit-dial-ammo rect {
+  fill: var(--bg-elevated-2);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.fit-dial-ammo.fit-dial-clickable:hover rect,
+.fit-dial-ammo:focus-visible rect {
+  stroke: var(--accent);
+}
+
+.fit-dial-hardpoint-plate {
+  fill: var(--bg);
+  fill-opacity: 0.72;
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.fit-dial-hardpoint-label {
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  fill: var(--text-muted);
+}
+
+.fit-dial-hardpoint {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.4;
+}
+
+.fit-dial-hardpoint-used {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+.fit-dial-gauge-track {
+  stroke: var(--bg-elevated-2);
+}
+
+.fit-dial-gauge-fill {
+  stroke: var(--accent);
+  transition: stroke-dasharray 0.2s;
+}
+
+.fit-dial-gauge-near .fit-dial-gauge-fill {
+  stroke: var(--warning);
+}
+
+.fit-dial-gauge-over .fit-dial-gauge-fill {
+  stroke: var(--danger);
+}
+
+/* The ribs are drawn over the bar in the panel colour, so the bar reads as a row of segments. */
+.fit-dial-gauge-ribs {
+  stroke: var(--bg);
+  opacity: 0.6;
+}
+
+.fit-dial-readout {
+  font-family: var(--font-label);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  fill: var(--text);
+}
+
+.fit-dial-readout-label {
+  fill: var(--text-muted);
+}
+
+.fit-dial-readout-near {
+  fill: var(--warning);
+}
+
+.fit-dial-readout-over {
+  fill: var(--danger);
+  font-weight: 700;
+}
+
+/* A search opened from an empty slot, floating over the middle of the dial. */
+.fit-dial-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(300px, 56%);
+  z-index: 3;
+  padding: 10px;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.fit-dial-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fit-dial-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fit-dial-picker-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.fit-dial-picker-close:hover {
+  color: var(--text);
+}
+
+/* The Fit Builder's dial sits on its own opaque card, so the page wallpaper cannot show through
+   the gaps round the ring. */
+.fit-dial-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.fit-dial-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.fit-dial-info-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fit-dial-info-cost {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.fit-dial-info-remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--danger);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fit-dial-info-remove:hover {
+  border-color: var(--danger);
+}
+
+.fit-dial-info-hint {
+  color: var(--text-muted);
+}
+
+.fit-dial-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 18px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.fit-dial-legend-destroyed {
+  color: var(--danger);
+}
+
+.fit-dial-legend-dropped {
+  color: var(--success);
 }
 
 /* Map */
@@ -10178,9 +10385,60 @@ img.fit-wheel-clickable:hover {
   color: var(--text-muted);
 }
 
-.gatecheck-saved-reverse:hover {
-  color: var(--accent);
+/* Bigger and accent-coloured (it used to be a 22px muted-grey icon that read
+   as decoration rather than a button) - a real, visibly clickable control,
+   with the instant hover label from GateCheck's chipTip. */
+.gatecheck-saved-chip .gatecheck-saved-reverse {
+  width: 28px;
+  height: 28px;
+  margin-right: 2px;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
   background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.gatecheck-saved-chip .gatecheck-saved-reverse:hover,
+.gatecheck-saved-chip .gatecheck-saved-reverse:focus-visible {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.gatecheck-reverse-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-label);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gatecheck-reverse-notice svg {
+  flex-shrink: 0;
+}
+
+.gatecheck-chip-tooltip {
+  position: fixed;
+  z-index: 600;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 300px;
+  padding: 7px 11px;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
 }
 
 .gatecheck-saved-remove {
@@ -11288,7 +11546,8 @@ img.fit-wheel-clickable:hover {
 
 /* Pausing on hover is the one thing every real ticker tape does - lets you
    actually read an entry instead of chasing it across the screen. */
-.mineral-ticker:hover .mineral-ticker-track {
+.mineral-ticker:hover .mineral-ticker-track,
+.mineral-ticker:focus-within .mineral-ticker-track {
   animation-play-state: paused;
 }
 

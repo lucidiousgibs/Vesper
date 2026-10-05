@@ -76,5 +76,5 @@
   inset: 0;
   z-index: 500;
   pointer-events: none;
-  background: linear-gradient(115deg, transparent 32%, rgba(143, 175, 255, 0.05) 48%, transparent 64%);
+  background: linear-gradient(115deg, transparent 32%, rgba(143, 175, 255, calc(0.05 * var(--fx-crt-k, 1))) 48%, transparent 64%);
 }

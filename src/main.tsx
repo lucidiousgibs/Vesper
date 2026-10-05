@@ -28,6 +28,16 @@ import "@fontsource/share-tech-mono";
 import "@fontsource/chakra-petch/500.css";
 import "@fontsource/chakra-petch/600.css";
 import "@fontsource/chakra-petch/700.css";
+// Faces for the White Phosphor, Cassette Deck, Tactical and Amber Command decks.
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
+import "@fontsource/vt323";
+import "@fontsource/b612-mono/400.css";
+import "@fontsource/b612-mono/700.css";
+// Bulkhead's stencilled section labels.
+import "@fontsource/stardos-stencil/400.css";
+import "@fontsource/stardos-stencil/700.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";

@@ -5,6 +5,7 @@ import { getMapData, type MapData } from "../lib/map";
 import { usePaginatedKillFeed } from "../hooks/usePaginatedKillFeed";
 import { securityColor, formatSecurity } from "../lib/format";
 import KillFeedTable from "./KillFeedTable";
+import KillTimeline from "./premium/KillTimeline";
 import { Pager, PAGE_SIZE } from "./killboardShared";
 import BackToMapButton from "./BackToMapButton";
 import TrackToggleButton from "./TrackToggleButton";
@@ -136,6 +137,7 @@ function SystemKillboard({
             <p className="detail-empty">No recent kills recorded for this system.</p>
           ) : (
             <>
+              <KillTimeline kills={kills} subject="This system" />
               <KillFeedTable
                 kills={pagedKills}
                 onSelectKill={onSelectKill}

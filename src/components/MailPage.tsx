@@ -1,4 +1,9 @@
 import { useEffect, useState } from "react";
+import SignalLamp from "./premium/SignalLamp";
+import StaleMark from "./premium/StaleMark";
+import { useTheme, isPremiumTheme } from "../hooks/useTheme";
+import { formatSecondsAgo } from "../lib/format";
+import { useNowCoarse } from "../hooks/useNow";
 import { ArrowLeft, Mail as MailIcon, Send, X } from "lucide-react";
 import {
   getCharacterMail,
@@ -68,6 +73,11 @@ function MailPage({ characters, initialCharacterId }: MailPageProps) {
   const [composeSubject, setComposeSubject] = useState("");
   const [composeBody, setComposeBody] = useState("");
   const [sending, setSending] = useState(false);
+  const [theme] = useTheme();
+  const premium = isPremiumTheme(theme);
+  useNowCoarse(premium); // keeps the "synced ... ago" text current
+  /** When the inbox was last fetched, for the sync readout on premium decks. */
+  const [mailSyncedAt, setMailSyncedAt] = useState<number | null>(null);
 
   useEffect(() => {
     if (selectedId == null) return;
@@ -87,7 +97,13 @@ function MailPage({ characters, initialCharacterId }: MailPageProps) {
     setComposeSuggestionsOpen(false);
     setComposeSubject("");
     setComposeBody("");
-    getCharacterMail(selectedId).then(setMail).catch(() => setMail({ entries: [], needs_reauth: false }));
+    setMailSyncedAt(null);
+    getCharacterMail(selectedId)
+      .then((result) => {
+        setMail(result);
+        setMailSyncedAt(Date.now());
+      })
+      .catch(() => setMail({ entries: [], needs_reauth: false }));
     getMailLabels(selectedId)
       .then((result) => setLabels(result.needs_reauth ? [] : result.labels))
       .catch(() => setLabels([]));
@@ -192,6 +208,13 @@ function MailPage({ characters, initialCharacterId }: MailPageProps) {
           <div>
             <p className="eyebrow">Mail</p>
             <h2>{selectedCharacter ? `${selectedCharacter.name}'s Inbox` : "Inbox"}</h2>
+            {premium && mailSyncedAt != null && (
+              <p className="mail-sync">
+                <SignalLamp since={mailSyncedAt} staleAfterMs={10 * 60_000} />
+                Mail synced {formatSecondsAgo(new Date(mailSyncedAt).toISOString())}
+                <StaleMark since={mailSyncedAt} afterMs={10 * 60_000} what="The inbox" />
+              </p>
+            )}
           </div>
           {selectedId != null && !composeOpen && (
             <button type="button" className="kills-sync-btn mail-compose-btn" onClick={openCompose}>
@@ -243,7 +266,7 @@ function MailPage({ characters, initialCharacterId }: MailPageProps) {
                     <span key={`${r.kind}:${r.id}`} className="mail-recipient-chip">
                       {r.name}
                       <button type="button" onClick={() => removeRecipient(r.id, r.kind)} aria-label={`Remove ${r.name}`}>
-                        <X size={11} strokeWidth={2.5} />
+                        <X size={11} strokeWidth={2.5} className="icon-danger" />
                       </button>
                     </span>
                   ))}

@@ -1,0 +1,1686 @@
+/* ============================================================================
+   PREMIUM SIGNAL TIERS
+   ============================================================================
+   The three-tier model for feeds and alerts under a premium deck:
+     tier 1 - needs a look: a loss, a billion-ISK kill, a critical toast
+     tier 2 - normal
+     tier 3 - background: NPC kills, pods, trivial value
+   Tier 1 is the only tier allowed to glow or carry colour beyond the deck's
+   normal accent; tier 3 recedes. If everything glows, nothing does.
+   Every selector is scoped to :root[data-tier="premium"], so standard themes
+   never see any of it.
+   ============================================================================ */
+
+/* ---- Kill feed rows ---- */
+
+/* Tier 3 recedes. Opacity is kept high enough that the row stays readable
+   (it is dimmed, not hidden) and returns to full on hover and focus. */
+:root[data-tier="premium"] .kills-row.kills-tier-3 {
+  opacity: calc(0.72 * var(--row-age, 1));
+  transition: opacity 120ms linear;
+}
+
+/* Older rows lose brightness (--row-age is set per row from the kill's own time).
+   Tier 1 never dims; every row comes back to full on hover and focus. */
+:root[data-tier="premium"] .kills-row.kills-tier-2 {
+  opacity: var(--row-age, 1);
+  transition: opacity 120ms linear;
+}
+
+:root[data-tier="premium"] .kills-row.kills-tier-2:hover,
+:root[data-tier="premium"] .kills-row.kills-tier-2:focus-visible,
+:root[data-tier="premium"] .kills-row.kills-tier-3:hover,
+:root[data-tier="premium"] .kills-row.kills-tier-3:focus-visible {
+  opacity: 1;
+}
+
+/* Tier 1 gets a lit rail and a soft wash. A loss already carries its own red
+   outcome styling; this adds the same weight for a very large kill. The rail
+   sits in the table's left gutter (outset) so it never covers the timestamp. */
+:root[data-tier="premium"] .kills-row.kills-tier-1:not(.kills-row-outcome-loss):not(.kills-row-outcome-kill) {
+  box-shadow: -4px 0 0 var(--accent);
+  background: linear-gradient(90deg, var(--accent-soft), transparent 55%);
+}
+
+/* ---- Toasts: critical tier and flood summary ---- */
+
+:root[data-tier="premium"] .toast-card-critical {
+  border-left-color: var(--danger);
+  background: linear-gradient(90deg, var(--danger-soft), transparent 70%), var(--deck-plate);
+}
+
+:root[data-tier="premium"] .toast-card-critical .toast-card-title {
+  color: var(--danger);
+}
+
+/* The flood summary reads as a count, not a message: a hazard-coloured rail
+   instead of the danger red, so it is clearly "too many to list" rather than
+   "something died". */
+:root[data-tier="premium"] .toast-card-flood {
+  border-left-color: var(--deck-hazard);
+  background: linear-gradient(90deg, var(--warning-soft), transparent 70%), var(--deck-plate);
+}
+
+:root[data-tier="premium"] .toast-card-flood .toast-card-title {
+  color: var(--warning);
+}
+
+/* ---- Map HUD rulers ----
+   Ruler ticks along the top and left edges of the targeting frame, between the
+   corner brackets: short minor ticks every 8px, taller major ticks every 40px.
+   Pure CSS, so they cost nothing per frame, and they read as instrument scale
+   marks without carrying any invented numbers. */
+:root[data-tier="premium"] .map-hud-frame::before,
+:root[data-tier="premium"] .map-hud-frame::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.45;
+  background-repeat: no-repeat;
+}
+
+:root[data-tier="premium"] .map-hud-frame::before {
+  top: 14px;
+  left: 52px;
+  right: 52px;
+  height: 11px;
+  background-image:
+    repeating-linear-gradient(90deg, var(--accent) 0 1px, transparent 1px 40px),
+    repeating-linear-gradient(90deg, var(--accent) 0 1px, transparent 1px 8px);
+  background-size: 100% 100%, 100% 5px;
+}
+
+:root[data-tier="premium"] .map-hud-frame::after {
+  left: 14px;
+  top: 52px;
+  bottom: 52px;
+  width: 11px;
+  background-image:
+    repeating-linear-gradient(180deg, var(--accent) 0 1px, transparent 1px 40px),
+    repeating-linear-gradient(180deg, var(--accent) 0 1px, transparent 1px 8px);
+  background-size: 100% 100%, 5px 100%;
+}
+
+/* ---- Command line (Ctrl+K) and system log ----
+   Two overlays shown only under a premium deck. Both use opaque deck plates
+   (the page behind them is busy) and keep a real gap between each header and
+   its first row. */
+:root[data-tier="premium"] .cmdk-backdrop,
+:root[data-tier="premium"] .syslog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  justify-content: center;
+  background: rgba(2, 6, 8, 0.74);
+}
+
+:root[data-tier="premium"] .cmdk-backdrop {
+  align-items: flex-start;
+  padding: 12vh 16px 16px;
+}
+
+:root[data-tier="premium"] .syslog-backdrop {
+  align-items: center;
+  padding: 16px;
+}
+
+:root[data-tier="premium"] .cmdk,
+:root[data-tier="premium"] .syslog {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 700px);
+  background: var(--deck-plate);
+  border: 2px solid var(--deck-frame);
+  box-shadow: 0 0 0 1px var(--deck-cavity), 0 22px 60px rgba(0, 0, 0, 0.65);
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+:root[data-tier="premium"] .cmdk {
+  max-height: 70vh;
+}
+
+:root[data-tier="premium"] .syslog {
+  width: min(100%, 920px);
+  max-height: calc(100vh - 32px);
+}
+
+:root[data-tier="premium"] .cmdk-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--deck-cavity);
+  border-bottom: 1px solid var(--deck-frame);
+}
+
+:root[data-tier="premium"] .cmdk-prompt {
+  color: var(--accent);
+  font-size: 18px;
+  text-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) var(--accent);
+}
+
+:root[data-tier="premium"] input.cmdk-input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  outline: none;
+  padding: 2px 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 16px;
+}
+
+:root[data-tier="premium"] .cmdk-list {
+  margin: 0;
+  padding: 8px 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+:root[data-tier="premium"] .cmdk-item {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 9px 16px;
+  cursor: pointer;
+}
+
+:root[data-tier="premium"] .cmdk-item-active {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+:root[data-tier="premium"] .cmdk-group {
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+:root[data-tier="premium"] .cmdk-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:root[data-tier="premium"] .cmdk-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+:root[data-tier="premium"] .cmdk-empty {
+  padding: 14px 16px;
+  color: var(--text-muted);
+}
+
+:root[data-tier="premium"] .cmdk-footer {
+  display: flex;
+  gap: 18px;
+  padding: 9px 16px;
+  border-top: 1px solid var(--deck-frame);
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+:root[data-tier="premium"] .syslog-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+  padding: 14px 18px;
+  background: var(--deck-cavity);
+  border-bottom: 1px solid var(--deck-frame);
+}
+
+:root[data-tier="premium"] .syslog-title {
+  color: var(--accent);
+  font-size: 14px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) var(--accent);
+}
+
+:root[data-tier="premium"] .syslog-count {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+:root[data-tier="premium"] .syslog-body {
+  padding: 14px 18px;
+  overflow-y: auto;
+  min-height: 120px;
+}
+
+:root[data-tier="premium"] .syslog-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+:root[data-tier="premium"] .syslog-row {
+  display: grid;
+  grid-template-columns: 72px 64px 52px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--deck-frame);
+  font-size: 12px;
+}
+
+:root[data-tier="premium"] .syslog-time,
+:root[data-tier="premium"] .syslog-source {
+  color: var(--text-muted);
+}
+
+:root[data-tier="premium"] .syslog-message {
+  overflow-wrap: anywhere;
+}
+
+:root[data-tier="premium"] .syslog-row-info .syslog-level {
+  color: var(--success);
+}
+
+:root[data-tier="premium"] .syslog-row-warn {
+  background: var(--warning-soft);
+}
+
+:root[data-tier="premium"] .syslog-row-warn .syslog-level {
+  color: var(--warning);
+}
+
+:root[data-tier="premium"] .syslog-row-error {
+  background: var(--danger-soft);
+}
+
+:root[data-tier="premium"] .syslog-row-error .syslog-level {
+  color: var(--danger);
+}
+
+:root[data-tier="premium"] .syslog-empty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+:root[data-tier="premium"] .syslog-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--deck-frame);
+}
+
+/* Topbar badges that open something: a pointer and a lit frame on hover/focus. */
+:root[data-tier="premium"] .topbar-clickable-badge {
+  cursor: pointer;
+}
+
+:root[data-tier="premium"] .topbar-clickable-badge:hover,
+:root[data-tier="premium"] .topbar-clickable-badge:focus-visible {
+  border-color: var(--accent);
+}
+
+/* ---- Startup sequence ----
+   A short terminal readout shown once per launch at Motion Full. Opaque, with a
+   real gap between the title block and the first line. */
+:root[data-tier="premium"] .boot-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--deck-cavity);
+  cursor: pointer;
+}
+
+:root[data-tier="premium"] .boot-term-fit {
+  width: min(100%, 540px);
+  transform-origin: center;
+}
+
+:root[data-tier="premium"] .boot-term {
+  width: 100%;
+  padding: 24px 30px;
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+  background: var(--deck-plate);
+  border: 2px solid var(--deck-frame);
+  box-shadow: 0 0 0 1px var(--deck-cavity), 0 22px 60px rgba(0, 0, 0, 0.6);
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+:root[data-tier="premium"] .boot-title {
+  font-family: var(--font-display);
+  font-size: 34px;
+  letter-spacing: 0.3em;
+  color: var(--accent);
+  text-shadow: 0 0 calc(10px * var(--fx-glow-k, 1)) var(--accent);
+}
+
+:root[data-tier="premium"] .boot-sub {
+  margin: 6px 0 14px;
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+:root[data-tier="premium"] .boot-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 218px;
+}
+
+:root[data-tier="premium"] .boot-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:root[data-tier="premium"] .boot-dots {
+  flex: 1;
+  min-width: 16px;
+  border-bottom: 1px dotted var(--deck-bezel);
+  transform: translateY(-3px);
+}
+
+:root[data-tier="premium"] .boot-val-ok {
+  color: var(--success);
+}
+
+:root[data-tier="premium"] .boot-val-pending {
+  color: var(--warning);
+}
+
+:root[data-tier="premium"] .boot-val-fail {
+  color: var(--danger);
+}
+
+:root[data-tier="premium"] .boot-final {
+  margin-top: 10px;
+  color: var(--accent);
+  font-size: 14px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+
+:root[data-tier="premium"] .boot-final-degraded {
+  color: var(--warning);
+}
+
+:root[data-tier="premium"] .boot-skip {
+  margin-top: 14px;
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* The topbar row has a fixed height, so a window that is too narrow for every
+   chip would wrap them over the page. The two chips this system added give way
+   first: the command-line hint hides below 1700px and the SYS chip drops its
+   label (the lamp and word remain) below 1500px. Ctrl+K works regardless. */
+@media (max-width: 1700px) {
+  :root[data-tier="premium"] .topbar-cmd-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 1500px) {
+  :root[data-tier="premium"] .topbar-sys-badge .status-chip-label,
+  :root[data-tier="premium"] .topbar-sys-badge .status-chip-sep {
+    display: none;
+  }
+}
+
+/* Real ESI round-trip time on the server badge. Hidden on narrower windows, where the
+   topbar has no room for it. */
+@media (max-width: 1700px) {
+  .server-status-latency {
+    display: none;
+  }
+}
+
+/* ---- Alert strip (premium decks) ---------------------------------------------
+   A tier-1 event (a tracked loss, or a flood summary) slides in under the topbar,
+   holds for about six seconds and slides out; the toast it replaces would have sat
+   in a corner. Warning class, so it still plays at Motion Low; at Motion Off it
+   simply appears and stays until the toast's own timer ends. */
+:root[data-tier="premium"] .alert-strip {
+  position: fixed;
+  top: var(--topbar-height, 92px);
+  left: var(--sidebar-width, 248px);
+  right: 0;
+  z-index: 480;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 18px;
+  background: color-mix(in srgb, var(--danger) 16%, var(--deck-cavity, var(--bg)));
+  border-bottom: 1px solid var(--danger);
+  border-left: 6px solid var(--danger);
+  color: var(--text);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), 0 0 calc(18px * var(--fx-glow-k, 1)) color-mix(in srgb, var(--danger) 35%, transparent);
+  animation:
+    alert-strip-in 300ms ease-out both,
+    alert-strip-out 200ms ease-in 6s forwards;
+}
+
+.alert-strip-tag {
+  flex: none;
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  padding: 2px 8px;
+}
+
+.alert-strip-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.alert-strip-more {
+  flex: none;
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.alert-strip-dismiss {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+@keyframes alert-strip-in {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes alert-strip-out {
+  to {
+    transform: translateY(-100%);
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+:root[data-tier="premium"] body[data-reduce-motion="true"] .alert-strip {
+  animation: none;
+}
+
+/* ---- Refresh scan pulse (premium decks) ----------------------------------------
+   One bright line crossing a panel once when its data has just refreshed. */
+:root[data-tier="premium"] .gatecheck-table-wrap {
+  position: relative;
+}
+
+.scan-pulse {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--accent) 20%, var(--accent) 80%, transparent);
+  box-shadow: 0 0 calc(10px * var(--fx-glow-k, 1)) var(--accent);
+  animation: scan-pulse-cross 700ms ease-in-out 1 both;
+}
+
+@keyframes scan-pulse-cross {
+  0% {
+    top: 0;
+    opacity: 0.95;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+body[data-reduce-motion="true"] .scan-pulse {
+  display: none;
+}
+
+/* Kill-rate trace and stale glyph on the kill-feed chip. */
+.topbar-kill-rate {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+}
+
+.topbar-stale-glyph {
+  color: var(--warning);
+  font-size: 10px;
+  line-height: 1;
+}
+
+@media (max-width: 1750px) {
+  .topbar-kill-rate {
+    display: none;
+  }
+}
+
+/* ---- Shared tiers on the map ticker and the activity ticker ----------------------
+   Same grammar as the kill feed: tier 3 recedes, older rows dim, hover restores. */
+:root[data-tier="premium"] .map-ticker-row.ticker-tier-3,
+:root[data-tier="premium"] .news-ticker-card.ticker-tier-3 {
+  opacity: 0.72;
+  transition: opacity 120ms linear;
+}
+
+:root[data-tier="premium"] .map-ticker-row.ticker-tier-2 {
+  opacity: var(--row-age, 1);
+  transition: opacity 120ms linear;
+}
+
+:root[data-tier="premium"] .map-ticker-row.ticker-tier-3 {
+  opacity: calc(0.72 * var(--row-age, 1));
+}
+
+:root[data-tier="premium"] .map-ticker-row.ticker-tier-2:hover,
+:root[data-tier="premium"] .map-ticker-row.ticker-tier-3:hover,
+:root[data-tier="premium"] .map-ticker-row:focus-visible,
+:root[data-tier="premium"] .news-ticker-card.ticker-tier-3:hover,
+:root[data-tier="premium"] .news-ticker-card.ticker-tier-3:focus-visible {
+  opacity: 1;
+}
+
+:root[data-tier="premium"] .news-ticker-card.ticker-tier-1 {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+/* ---- Tracking boxes -------------------------------------------------------------
+   Four corner brackets close in on the row under the pointer or keyboard focus, the
+   way a targeting display boxes a contact. Drawn as one pseudo-element so it never
+   fights the row's own background. Motion Off draws them without the closing-in. */
+:root[data-tier="premium"] .kills-row-clickable,
+:root[data-tier="premium"] .map-ticker-row {
+  position: relative;
+}
+
+:root[data-tier="premium"] .kills-row-clickable::after,
+:root[data-tier="premium"] .map-ticker-row::after {
+  --b: 9px;
+  --w: 2px;
+  --k: var(--accent);
+  content: "";
+  position: absolute;
+  inset: 2px;
+  pointer-events: none;
+  opacity: 0;
+  background-repeat: no-repeat;
+  background-image:
+    linear-gradient(var(--k) 0 0), linear-gradient(var(--k) 0 0), linear-gradient(var(--k) 0 0), linear-gradient(var(--k) 0 0),
+    linear-gradient(var(--k) 0 0), linear-gradient(var(--k) 0 0), linear-gradient(var(--k) 0 0), linear-gradient(var(--k) 0 0);
+  background-position: left top, left top, right top, right top, left bottom, left bottom, right bottom, right bottom;
+  background-size: var(--b) var(--w), var(--w) var(--b), var(--b) var(--w), var(--w) var(--b), var(--b) var(--w), var(--w) var(--b), var(--b) var(--w), var(--w) var(--b);
+}
+
+:root[data-tier="premium"] .kills-row-clickable:hover::after,
+:root[data-tier="premium"] .kills-row-clickable:focus-visible::after,
+:root[data-tier="premium"] .map-ticker-row:hover::after,
+:root[data-tier="premium"] .map-ticker-row:focus-visible::after {
+  opacity: 1;
+  animation: tracking-close 160ms ease-out both;
+}
+
+@keyframes tracking-close {
+  from {
+    inset: -3px;
+    opacity: 0;
+  }
+  to {
+    inset: 2px;
+    opacity: 1;
+  }
+}
+
+:root[data-tier="premium"] body[data-reduce-motion="true"] .kills-row-clickable::after,
+:root[data-tier="premium"] body[data-reduce-motion="true"] .map-ticker-row::after {
+  animation: none;
+}
+
+/* ---- Boot polish: type-on text ----------------------------------------------------------
+   The title and subtitle type on; the untyped remainder keeps its width so nothing shifts. */
+:root[data-tier="premium"] .boot-untyped {
+  visibility: hidden;
+}
+
+:root[data-tier="premium"] .boot-caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.9em;
+  margin-left: 2px;
+  vertical-align: -0.1em;
+  background: var(--accent);
+}
+
+/* ---- Panel boot-up ------------------------------------------------------------------
+   On the first open of a page this session, its top-level panels stage in, 60ms apart
+   over 400ms. Ambient and decorative, so Motion Full only. */
+:root[data-tier="premium"][data-fx-motion="full"][data-first-open] .main > * {
+  animation: panel-boot 400ms ease-out both;
+}
+
+:root[data-tier="premium"][data-fx-motion="full"][data-first-open] .main > :nth-child(2) { animation-delay: 60ms; }
+:root[data-tier="premium"][data-fx-motion="full"][data-first-open] .main > :nth-child(3) { animation-delay: 120ms; }
+:root[data-tier="premium"][data-fx-motion="full"][data-first-open] .main > :nth-child(4) { animation-delay: 180ms; }
+:root[data-tier="premium"][data-fx-motion="full"][data-first-open] .main > :nth-child(5) { animation-delay: 240ms; }
+:root[data-tier="premium"][data-fx-motion="full"][data-first-open] .main > :nth-child(6) { animation-delay: 300ms; }
+:root[data-tier="premium"][data-fx-motion="full"][data-first-open] .main > :nth-child(n + 7) { animation-delay: 360ms; }
+
+@keyframes panel-boot {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- Chart trace-on ----------------------------------------------------------------
+   A chart line draws itself once when it first appears: informational, so it plays at
+   Motion Low and Full, never Off. pathLength=1 on the element makes the dash maths
+   independent of the line's real length. */
+:root[data-tier="premium"]:not([data-fx-motion="off"]) .chart-trace {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: chart-trace-draw 500ms ease-out forwards;
+}
+
+@keyframes chart-trace-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+:root[data-tier="premium"] body[data-reduce-motion="true"] .chart-trace {
+  stroke-dasharray: none;
+  stroke-dashoffset: 0;
+  animation: none;
+}
+
+/* ---- Smoked glass ---------------------------------------------------------------------
+   The map's two floating panels (the Filters menu and the legend) become smoked glass:
+   still mostly opaque so nothing reads through them, but with a soft blur of the map
+   behind. Premium only, and just these two, so the blur cost stays tiny. */
+:root[data-tier="premium"] .map-filters-menu,
+:root[data-tier="premium"] .map-legend {
+  background: color-mix(in srgb, var(--deck-plate, var(--bg-elevated)) 86%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.15);
+  backdrop-filter: blur(10px) saturate(1.15);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--deck-frame, var(--border)));
+}
+
+/* NET readout: ESI request activity (TX out, RX back) and the session request count.
+   Hidden on narrower windows where the top bar has no room. */
+.topbar-net-badge {
+  gap: 8px;
+}
+
+.topbar-net-label {
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.topbar-net-light {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-label);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.topbar-net-count {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 1850px) {
+  .topbar-net-badge {
+    display: none;
+  }
+}
+
+/* The command line's caret is a solid block, like a terminal's. */
+.cmdk-input {
+  caret-shape: block;
+  caret-color: var(--accent);
+}
+
+/* Warning triangle beside data that has not refreshed in time. */
+.stale-mark {
+  margin-left: 6px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--warning);
+}
+
+.camps-updated {
+  color: var(--text-muted);
+}
+
+.mail-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ---- Pointer parallax on the map's HUD frame ------------------------------------------
+   The brackets and reticle drift a few pixels against the pointer. Decorative and ambient,
+   so Motion Full only. */
+:root[data-tier="premium"][data-fx-motion="full"] .map-hud-frame {
+  transform: translate(calc(var(--hud-px, 0) * -3px), calc(var(--hud-py, 0) * -3px));
+  transition: transform 160ms ease-out;
+}
+
+/* ---- Startup sequence, staged -----------------------------------------------------------
+   A stage line and a progress bar under the title, a lamp bank that flashes once when the lamp
+   test completes, and a fade as the sequence hands over to the app. */
+:root[data-tier="premium"] .boot-stage {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+:root[data-tier="premium"] .boot-stage span:last-child {
+  color: var(--accent);
+}
+
+:root[data-tier="premium"] .boot-progress .segment-bar {
+  display: flex;
+  width: 100%;
+}
+
+@keyframes boot-lamp-flash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
+/* One fixed-height panel holds the lamp bank in stage 1 and the subsystem lines after it, so
+   the terminal never changes size while it runs. */
+:root[data-tier="premium"] .boot-panel {
+  margin-top: 16px;
+  min-height: 218px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+:root[data-tier="premium"] .boot-panel .boot-lines {
+  min-height: 218px;
+  justify-content: flex-start;
+  animation: boot-panel-in 220ms ease-out both;
+}
+
+@keyframes boot-panel-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+:root[data-tier="premium"] .boot-bank {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+:root[data-tier="premium"] .boot-bank-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+:root[data-tier="premium"] .boot-bank-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+}
+
+:root[data-tier="premium"] .boot-bank-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+:root[data-tier="premium"] .boot-bank-lamp.status-lamp-rect {
+  width: 100%;
+  height: 26px;
+  margin: 0;
+  border-radius: 3px;
+}
+
+:root[data-tier="premium"] .boot-bank-caption {
+  margin-top: 2px;
+  text-align: center;
+  color: var(--deck-bezel);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: color 160ms;
+}
+
+:root[data-tier="premium"] .boot-bank-caption-lit {
+  color: var(--text);
+}
+
+:root[data-tier="premium"] .boot-bank-flash .status-lamp {
+  animation: boot-lamp-flash 300ms ease-in-out 2;
+}
+
+:root[data-tier="premium"] .boot-closing {
+  opacity: 0;
+  transition: opacity 1100ms ease-in-out;
+  pointer-events: none;
+}
+
+/* ---- Login window ---------------------------------------------------------------------------
+   The last screen of the startup sequence: a console session opening. A readout strip across the
+   top, the wordmark and the authentication result on the left, live status panels on the right.
+   Opaque like the terminal before it, with a real gap between each block and the next. */
+:root[data-tier="premium"] .boot-login-fit {
+  width: min(100%, 1040px);
+  transform-origin: center;
+}
+
+:root[data-tier="premium"] .boot-login {
+  position: relative;
+  width: 100%;
+  max-height: calc(100vh - 32px);
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  column-gap: 32px;
+  padding: 20px 30px 16px;
+  background: var(--deck-plate);
+  border: 2px solid var(--deck-frame);
+  box-shadow: 0 0 0 1px var(--deck-cavity), 0 22px 60px rgba(0, 0, 0, 0.6);
+  font-family: var(--font-mono);
+  color: var(--text);
+  overflow: hidden;
+  animation: login-open 320ms ease-out both;
+}
+
+/* Corner brackets, drawn inside the frame. */
+:root[data-tier="premium"] .boot-login::before,
+:root[data-tier="premium"] .boot-login::after {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--accent);
+  pointer-events: none;
+}
+
+:root[data-tier="premium"] .boot-login::before {
+  top: 8px;
+  left: 8px;
+  border-right: none;
+  border-bottom: none;
+}
+
+:root[data-tier="premium"] .boot-login::after {
+  right: 8px;
+  bottom: 8px;
+  border-left: none;
+  border-top: none;
+}
+
+@keyframes login-open {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+:root[data-tier="premium"] .login-top {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--deck-frame);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+:root[data-tier="premium"] .login-log,
+:root[data-tier="premium"] .login-clock {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+:root[data-tier="premium"] .login-log span:first-child,
+:root[data-tier="premium"] .login-clock span:first-child {
+  color: var(--accent);
+}
+
+:root[data-tier="premium"] .login-clock {
+  text-align: right;
+}
+
+:root[data-tier="premium"] .login-link-ok {
+  color: var(--success);
+}
+
+:root[data-tier="premium"] .login-link-down {
+  color: var(--danger);
+}
+
+:root[data-tier="premium"] .login-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+:root[data-tier="premium"] .login-wordmark {
+  font-family: var(--font-display);
+  font-size: clamp(56px, 9vw, 108px);
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  text-shadow: 0 0 calc(18px * var(--fx-glow-k, 1)) var(--accent);
+}
+
+:root[data-tier="premium"] .login-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  font-size: 12px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+:root[data-tier="premium"] .login-sub span:first-child {
+  color: var(--text);
+}
+
+:root[data-tier="premium"] .login-rule {
+  height: 1px;
+  margin: 14px 0;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  opacity: 0.7;
+}
+
+:root[data-tier="premium"] .login-heading {
+  margin-bottom: 10px;
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  animation: login-in 240ms ease-out both;
+}
+
+:root[data-tier="premium"] .login-auth {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 150px;
+}
+
+:root[data-tier="premium"] .login-auth-row,
+:root[data-tier="premium"] .login-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  animation: login-in 200ms ease-out both;
+}
+
+:root[data-tier="premium"] .login-auth-row {
+  font-size: 13px;
+}
+
+:root[data-tier="premium"] .login-auth-dots {
+  flex: 1;
+  min-width: 16px;
+  border-bottom: 1px dotted var(--deck-bezel);
+  transform: translateY(-3px);
+}
+
+:root[data-tier="premium"] .login-val-ok {
+  color: var(--success);
+}
+
+:root[data-tier="premium"] .login-val-pending {
+  color: var(--warning);
+}
+
+:root[data-tier="premium"] .login-val-fail {
+  color: var(--danger);
+}
+
+:root[data-tier="premium"] .login-faults {
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  animation: login-in 240ms ease-out both;
+}
+
+:root[data-tier="premium"] .login-faults-bad {
+  color: var(--warning);
+}
+
+:root[data-tier="premium"] .login-welcome {
+  margin-top: 14px;
+  font-size: 17px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+:root[data-tier="premium"] .login-name {
+  margin-top: 4px;
+  color: var(--accent);
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  animation: login-in 240ms ease-out both;
+}
+
+:root[data-tier="premium"] .login-banner {
+  margin-top: 16px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 15px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  text-shadow: 0 0 calc(8px * var(--fx-glow-k, 1)) var(--accent);
+  animation: login-in 300ms ease-out both;
+}
+
+:root[data-tier="premium"] .login-banner-degraded {
+  color: var(--warning);
+  border-color: var(--warning);
+  text-shadow: none;
+}
+
+:root[data-tier="premium"] .login-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+:root[data-tier="premium"] .login-panel {
+  padding: 10px 12px 12px;
+  border: 1px solid var(--deck-frame);
+  background: var(--deck-cavity);
+  animation: login-in 300ms ease-out both;
+}
+
+:root[data-tier="premium"] .login-panel h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+:root[data-tier="premium"] .login-pilots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+:root[data-tier="premium"] .login-pilot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+:root[data-tier="premium"] .login-pilot img {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--deck-frame);
+  object-fit: cover;
+}
+
+:root[data-tier="premium"] .login-pilot-active {
+  color: var(--text);
+}
+
+:root[data-tier="premium"] .login-pilot-active img {
+  border-color: var(--accent);
+}
+
+:root[data-tier="premium"] .login-pilot em {
+  font-style: normal;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+
+:root[data-tier="premium"] .login-muted {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
+:root[data-tier="premium"] .login-more {
+  flex-basis: 100%;
+}
+
+:root[data-tier="premium"] .login-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+:root[data-tier="premium"] .login-status-row {
+  font-size: 11px;
+}
+
+:root[data-tier="premium"] .login-net {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:root[data-tier="premium"] .login-net div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+:root[data-tier="premium"] .login-net span {
+  color: var(--text-muted);
+}
+
+:root[data-tier="premium"] .login-net b {
+  font-weight: 400;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-tier="premium"] .login-trace {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dotted var(--deck-bezel);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+:root[data-tier="premium"] .login-skip {
+  grid-column: 1 / -1;
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+
+/* A narrower window drops the side panels and keeps the login itself; a shorter one tightens up. */
+@media (max-width: 880px) {
+  :root[data-tier="premium"] .boot-login {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :root[data-tier="premium"] .login-side {
+    display: none;
+  }
+}
+
+@media (max-height: 720px) {
+  :root[data-tier="premium"] .boot-login {
+    padding: 14px 24px 12px;
+  }
+
+  :root[data-tier="premium"] .login-top {
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+  }
+
+  :root[data-tier="premium"] .login-wordmark {
+    font-size: clamp(44px, 8vw, 68px);
+  }
+
+  :root[data-tier="premium"] .login-rule {
+    margin: 8px 0;
+  }
+
+  :root[data-tier="premium"] .login-auth {
+    gap: 3px;
+    min-height: 120px;
+  }
+
+  :root[data-tier="premium"] .login-welcome {
+    margin-top: 8px;
+    font-size: 15px;
+  }
+
+  :root[data-tier="premium"] .login-banner {
+    margin-top: 10px;
+    padding: 6px 12px;
+  }
+}
+
+/* Every block of the login window is laid out from the first frame; one that has not been revealed
+   yet is only hidden, so it still takes its space and the window never changes size. */
+:root[data-tier="premium"] .login-hidden {
+  visibility: hidden;
+}
+
+:root[data-tier="premium"] .login-shown {
+  animation: login-in 260ms ease-out both;
+}
+
+@media (max-height: 620px) {
+  :root[data-tier="premium"] .login-wordmark {
+    font-size: 48px;
+  }
+
+  :root[data-tier="premium"] .login-sub {
+    margin-top: 4px;
+    font-size: 11px;
+  }
+
+  :root[data-tier="premium"] .login-rule {
+    margin: 6px 0;
+  }
+
+  :root[data-tier="premium"] .login-heading {
+    margin-bottom: 6px;
+  }
+
+  :root[data-tier="premium"] .login-auth {
+    gap: 2px;
+    min-height: 0;
+  }
+
+  :root[data-tier="premium"] .login-faults {
+    margin-top: 6px;
+  }
+
+  :root[data-tier="premium"] .login-welcome {
+    margin-top: 6px;
+    font-size: 14px;
+  }
+
+  :root[data-tier="premium"] .login-banner {
+    margin-top: 8px;
+    padding: 4px 10px;
+    font-size: 13px;
+  }
+
+  :root[data-tier="premium"] .login-skip {
+    margin-top: 6px;
+  }
+}
+
+/* ---- The ending ----------------------------------------------------------------------------
+   After the final screen has held, everything but the logo fades away (the window's own plate and
+   brackets included), the logo floats to the middle of the screen and glows while the ship's voice
+   speaks, and the whole sequence fades out as the app fades in behind it. */
+:root[data-tier="premium"] .login-wordmark {
+  display: inline-block;
+  align-self: flex-start;
+}
+
+:root[data-tier="premium"] .login-outro {
+  overflow: visible;
+  animation: login-chrome-out 900ms ease-in both;
+}
+
+:root[data-tier="premium"] .login-outro::before,
+:root[data-tier="premium"] .login-outro::after,
+:root[data-tier="premium"] .login-outro > :not(.login-main),
+:root[data-tier="premium"] .login-outro .login-main > :not(.login-wordmark) {
+  animation: login-fade-out 900ms ease-in both;
+}
+
+@keyframes login-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes login-chrome-out {
+  to {
+    background-color: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+}
+
+:root[data-tier="premium"] .login-speaking {
+  animation: login-speak 1.2s ease-in-out infinite;
+}
+
+@keyframes login-speak {
+  0%,
+  100% {
+    text-shadow: 0 0 calc(18px * var(--fx-glow-k, 1)) var(--accent);
+  }
+  50% {
+    text-shadow: 0 0 calc(34px * var(--fx-glow-k, 1)) var(--accent), 0 0 calc(70px * var(--fx-glow-k, 1)) var(--accent);
+  }
+}
+
+/* The app, fading in behind the sequence as it fades out. The sequence itself sits inside the shell,
+   so it is left out of this. */
+:root[data-boot-fade="in"] .shell > :not(.boot-overlay) {
+  animation: shell-fade-in 1100ms ease-out both;
+}
+
+@keyframes shell-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- The CRT -------------------------------------------------------------------------------
+   The startup sequence is drawn as the screen of an old ship's console, after the green-phosphor
+   terminals of the Alien films (the look cool-retro-term reproduces): a glow on every letter, a
+   power-on that opens a bright line out to the picture, scanlines, a bar of brightness rolling down
+   the tube, crawling static, flicker, a sideways shake now and then, a flash of colour fringing, a
+   vignette and a rounded bezel. The colour is the theme in use: the effects are all drawn from the
+   deck's own accent, text and panel colours, so whichever deck was last used tints the whole
+   sequence. Status colours stay as they are, because a lamp that is red means danger whatever the
+   theme. */
+:root[data-tier="premium"] .boot-overlay {
+  --fx-glow-k: 1.7;
+  overflow: hidden;
+  /* Phosphor glow on every letter, in the deck's accent. */
+  text-shadow: 0 0 4px color-mix(in srgb, var(--accent) 70%, transparent), 0 0 12px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+/* The picture itself. It fills the screen; the sequence is centred in it. */
+:root[data-tier="premium"] .crt-screen {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Power-on: a bright dot opens to a line, the line opens to the picture. It only holds before it
+     starts, so the shake below can use the transform afterwards. */
+  animation: crt-power-on 800ms ease-out backwards, crt-flicker 6.3s linear 800ms infinite;
+}
+
+@keyframes crt-power-on {
+  0% {
+    transform: scale(0.02, 0.003);
+    filter: brightness(9);
+    opacity: 0;
+  }
+  12% {
+    transform: scale(0.6, 0.004);
+    filter: brightness(9);
+    opacity: 1;
+  }
+  38% {
+    transform: scale(1, 0.006);
+    filter: brightness(7);
+  }
+  62% {
+    transform: scale(1, 1.06);
+    filter: brightness(2.6);
+  }
+  80% {
+    transform: scale(1, 0.985);
+    filter: brightness(1.3);
+  }
+  100% {
+    transform: scale(1, 1);
+    filter: brightness(1);
+  }
+}
+
+/* A slow, uneven flicker in the brightness of the whole tube. */
+@keyframes crt-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  3% {
+    opacity: 0.97;
+  }
+  5% {
+    opacity: 1;
+  }
+  11% {
+    opacity: 0.985;
+  }
+  12% {
+    opacity: 1;
+  }
+  27% {
+    opacity: 0.96;
+  }
+  28% {
+    opacity: 1;
+  }
+  41% {
+    opacity: 0.98;
+  }
+  63% {
+    opacity: 1;
+  }
+  64% {
+    opacity: 0.955;
+  }
+  65% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 0.975;
+  }
+  83% {
+    opacity: 0.99;
+  }
+}
+
+/* The random imperfections, switched on for a moment at a time by BootCrt's useCrtGlitches. */
+:root[data-tier="premium"] .boot-overlay[data-crt-dip] .crt-screen {
+  filter: brightness(0.62);
+}
+
+:root[data-tier="premium"] .boot-overlay[data-crt-jitter] .crt-screen {
+  transform: translateX(var(--crt-jx, 3px)) skewX(0.35deg);
+}
+
+:root[data-tier="premium"] .boot-overlay[data-crt-fringe],
+:root[data-tier="premium"] .boot-overlay[data-crt-burst] {
+  text-shadow: -2px 0 rgba(255, 50, 90, 0.65), 2px 0 rgba(60, 230, 255, 0.65), 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+:root[data-tier="premium"] .boot-overlay[data-crt-burst] .crt-screen {
+  transform: translateX(var(--crt-jx, 6px)) skewX(0.8deg);
+  filter: brightness(1.5) contrast(1.25);
+}
+
+:root[data-tier="premium"] .boot-overlay[data-crt-burst] .crt-noise {
+  opacity: 0.62;
+}
+
+/* The layers laid over the picture. None of them takes a click. */
+:root[data-tier="premium"] .crt-layers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+:root[data-tier="premium"] .crt-layers > div {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Scanlines: a dark line every third row. */
+:root[data-tier="premium"] .crt-scan {
+  inset: 0;
+  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.36) 0, rgba(0, 0, 0, 0.36) 1px, rgba(0, 0, 0, 0) 1px, rgba(0, 0, 0, 0) 3px);
+}
+
+/* A soft bar of brightness rolling slowly down the tube. */
+:root[data-tier="premium"] .crt-roll {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 28%;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--accent) 10%, transparent) 50%, transparent);
+  animation: crt-roll 7s linear infinite;
+}
+
+@keyframes crt-roll {
+  from {
+    transform: translateY(-40%);
+  }
+  to {
+    transform: translateY(420%);
+  }
+}
+
+/* Static: film-grain noise that crawls about from frame to frame. */
+:root[data-tier="premium"] .crt-noise {
+  inset: -10%;
+  opacity: 0.11;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n' x='0' y='0' width='100%' height='100%'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.6 -0.35'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
+  animation: crt-noise-crawl 0.6s steps(6) infinite;
+}
+
+@keyframes crt-noise-crawl {
+  0% {
+    transform: translate(0, 0);
+  }
+  17% {
+    transform: translate(-3%, 2%);
+  }
+  33% {
+    transform: translate(2%, -4%);
+  }
+  50% {
+    transform: translate(-5%, -2%);
+  }
+  67% {
+    transform: translate(4%, 3%);
+  }
+  83% {
+    transform: translate(-2%, 5%);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+/* Dark corners, and a sheen of glass across the top left. */
+:root[data-tier="premium"] .crt-vignette {
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.6) 100%), linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 28%);
+}
+
+/* The bezel: a black frame with a rounded opening, so the screen has round corners. */
+:root[data-tier="premium"] .crt-bezel {
+  inset: 0;
+  border: 2.4vmin solid #000;
+  border-radius: 7vmin;
+  box-shadow: inset 0 0 9vmin 1.5vmin rgba(0, 0, 0, 0.9), inset 0 0 0 2px rgba(255, 255, 255, 0.05);
+}
+
+/* Each new line lights up bright, as phosphor does when the beam first hits it, then settles. */
+@keyframes login-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+    filter: brightness(2.6);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: brightness(1);
+  }
+}
+
+:root[data-tier="premium"] .boot-line {
+  animation: login-in 260ms ease-out both;
+}

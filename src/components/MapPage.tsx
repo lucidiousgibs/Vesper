@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Map as MapIcon, Minimize2 } from "lucide-react";
 import MapView from "./MapView";
-import type { MapSystem } from "../lib/map";
+import { ROUTE_REQUEST_EVENT, takePendingRoute, type RouteWaypoint } from "../lib/routeRequest";
 import PageTabBar from "./PageTabBar";
 import GateCheck from "./GateCheck";
 import LikelyGateCamps from "./LikelyGateCamps";
@@ -60,7 +60,20 @@ function MapPage({
   // Set by "Send Route to Gate Check" on the map tab - GateCheck below picks
   // this up, pre-fills its waypoint slots, auto-runs the check, then
   // consumes it (one-shot, same pattern as initialTab above).
-  const [pendingGateCheckWaypoints, setPendingGateCheckWaypoints] = useState<MapSystem[] | null>(null);
+  const [pendingGateCheckWaypoints, setPendingGateCheckWaypoints] = useState<RouteWaypoint[] | null>(null);
+
+  // A route asked for from the command line ("route Jita to Amarr"): plan it in Gate Check.
+  useEffect(() => {
+    function take() {
+      const request = takePendingRoute();
+      if (!request) return;
+      setPendingGateCheckWaypoints(request);
+      setTab("gatecheck");
+    }
+    take();
+    window.addEventListener(ROUTE_REQUEST_EVENT, take);
+    return () => window.removeEventListener(ROUTE_REQUEST_EVENT, take);
+  }, []);
   // Set once Gate Check's "Push Route to EVE Online" succeeds - handed to
   // MapView so it can draw that exact route, overriding its own plain
   // current-location-to-destination line until the banner's X clears it.

@@ -380,7 +380,7 @@ function ConnectionEditor({
               onClick={() => update({ flag_icon: null, flag_color: null, flag_note: "", flag_blink: false })}
               title="Remove flag"
             >
-              <X size={12} strokeWidth={2} />
+              <X size={12} strokeWidth={2} className="icon-danger" />
             </button>
           )}
         </div>

@@ -57,7 +57,7 @@ function MiniPriceChart({ points, name }: MiniPriceChartProps) {
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="mini-price-chart-svg">
         <polygon points={areaPoints} className="market-history-area" />
-        <polyline points={linePoints} className="market-history-line" />
+        <polyline points={linePoints} className="market-history-line chart-trace" pathLength={1} />
       </svg>
     </div>
   );

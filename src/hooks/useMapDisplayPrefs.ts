@@ -12,6 +12,10 @@ const SHOW_ANNOTATIONS_KEY = "vesper.map.showAnnotations";
 const SHOW_TERRITORY_KEY = "vesper.map.showTerritory";
 const TERRITORY_MODE_KEY = "vesper.map.territoryMode";
 const HEAT_MODE_KEY = "vesper.map.heatMode";
+const SHOW_CONTACT_TRAILS_KEY = "vesper.map.showContactTrails";
+const SHOW_ROUTE_PARTICLES_KEY = "vesper.map.showRouteParticles";
+const SHOW_LIKELY_CAMPS_KEY = "vesper.map.showLikelyCamps";
+const SHOW_GRID_LABELS_KEY = "vesper.map.showGridLabels";
 
 /** Whether the Map screen's key/legend panel is open, whether the
  * DOTLAN-style service icons show under system names, whether contested
@@ -35,6 +39,13 @@ export function useMapDisplayPrefs() {
   const [showTerritory, setShowTerritory] = usePersistentState<boolean>(SHOW_TERRITORY_KEY, false);
   const [territoryMode, setTerritoryMode] = usePersistentState<"sov" | "standings">(TERRITORY_MODE_KEY, "sov");
   const [heatMode, setHeatMode] = usePersistentState<"kills" | "traffic" | "npc">(HEAT_MODE_KEY, "kills");
+  // Premium-deck map effects (see the Effects settings for the animation budget
+  // they share). Both are on by default because they carry real information
+  // (where kills just happened, which way the route runs).
+  const [showContactTrails, setShowContactTrails] = usePersistentState<boolean>(SHOW_CONTACT_TRAILS_KEY, true);
+  const [showRouteParticles, setShowRouteParticles] = usePersistentState<boolean>(SHOW_ROUTE_PARTICLES_KEY, true);
+  const [showLikelyCamps, setShowLikelyCamps] = usePersistentState<boolean>(SHOW_LIKELY_CAMPS_KEY, false);
+  const [showGridLabels, setShowGridLabels] = usePersistentState<boolean>(SHOW_GRID_LABELS_KEY, true);
 
   return {
     legendOpen,
@@ -61,5 +72,13 @@ export function useMapDisplayPrefs() {
     setTerritoryMode,
     heatMode,
     setHeatMode,
+    showContactTrails,
+    setShowContactTrails,
+    showRouteParticles,
+    setShowRouteParticles,
+    showLikelyCamps,
+    setShowLikelyCamps,
+    showGridLabels,
+    setShowGridLabels,
   };
 }

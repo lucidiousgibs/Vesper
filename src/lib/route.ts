@@ -37,6 +37,9 @@ export function getGateActivity(systemIds: number[]): Promise<GateKillEvent[]> {
   return invoke("get_gate_activity", { systemIds });
 }
 
+/** Kills in the last hour at which a gate counts as high activity (the red band on both gate boards). */
+export const GATE_CAMP_KILLS_HIGH = 6;
+
 export interface LikelyGateCamp {
   origin_system_id: number;
   origin_system_name: string;
@@ -49,6 +52,13 @@ export interface LikelyGateCamp {
   kills_last_hour: number;
   pods_last_hour: number;
   last_kill_time: string;
+  /** Kills per ten-minute slice of the last hour, oldest first (the last entry is the most recent ten minutes). */
+  kills_by_10min: number[];
+}
+
+/** Kills per five-minute slice across New Eden for the last hour, oldest first (the last entry is the most recent five minutes), from the local kill store. */
+export function getKillRateBins(): Promise<number[]> {
+  return invoke("get_kill_rate_bins");
 }
 
 /** New Eden-wide "what's likely camped right now" board - every stargate with a recorded kill in the last hour, ranked by kill count, from the local kill-history store. Matches eve-gatecheck.space's own "Current (likely) gatecamps" list. */

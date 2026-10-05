@@ -1,0 +1,164 @@
+/* ============================================================================
+   PHOSPHOR GREEN - deck-specific geometry
+   ============================================================================
+   Signature: a ship's terminal. Page titles carry a shell prompt and a block
+   cursor, instrument badges get a dashed terminal frame instead of
+   Bulkhead's rivets, Cold Ballast's containment ring, Command Deck's
+   segmented line or Amber Exchange's ledger rule, the active nav row reads
+   as a lit phosphor strip, and the whole screen sits behind a thin scan
+   raster with a soft green-tinted vignette. The raster and vignette scale
+   with the CRT and Scanlines settings (see premium-fx.css); the cursor stops
+   blinking below Motion Full.
+   ============================================================================ */
+
+/* Shell prompt on every page title. Every page header in the app uses an h2
+   for its title. */
+:root[data-theme="phosphor-green"]
+  :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  )
+  h2::before {
+  content: "> ";
+  color: var(--accent);
+  text-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) var(--accent);
+}
+
+/* Block cursor after the title. The one ambient loop this deck adds; it
+   follows the Motion setting like every other loop and rests as a steady
+   block below Full. */
+:root[data-theme="phosphor-green"]
+  :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  )
+  h2::after {
+  content: "";
+  display: inline-block;
+  width: 0.55em;
+  height: 0.95em;
+  margin-left: 6px;
+  vertical-align: -0.1em;
+  background: var(--accent);
+  box-shadow: 0 0 calc(6px * var(--fx-glow-k, 1)) var(--accent);
+  animation: phosphor-cursor 1.06s steps(1, end) infinite;
+}
+
+@keyframes phosphor-cursor {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  56%,
+  100% {
+    opacity: 0;
+  }
+}
+
+:root[data-theme="phosphor-green"][data-fx-motion="low"]
+  :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  )
+  h2::after,
+:root[data-theme="phosphor-green"] body[data-reduce-motion="true"]
+  :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  )
+  h2::after {
+  animation: none;
+}
+
+/* Dashed terminal frame on the topbar instrument badges. */
+:root[data-theme="phosphor-green"] .server-status-badge,
+:root[data-theme="phosphor-green"] .capsuleers-online-badge,
+:root[data-theme="phosphor-green"] .account-trigger,
+:root[data-theme="phosphor-green"] .eve-time-clock,
+:root[data-theme="phosphor-green"] .location-tracker-current {
+  border: 1px dashed var(--deck-bezel);
+  box-shadow: inset 0 0 0 1px var(--deck-cavity);
+}
+
+/* Dotted brand divider instead of a rivet row or a plain line. */
+:root[data-theme="phosphor-green"] .brand-divider {
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--accent) 0 2px, transparent 2px 6px);
+}
+
+/* Thin frame on the sidebar. */
+:root[data-theme="phosphor-green"] .sidebar {
+  border-right: 2px solid var(--deck-frame);
+  box-shadow: inset -1px 0 0 var(--deck-bevel-light);
+}
+
+/* The active nav row reads as a lit phosphor strip: a soft fill fading out to
+   the right, layered under the shared energised rail and lamp that every
+   deck's active item already gets from premium-structure.css. Background
+   only, so the shared box-shadow declaration stays untouched. */
+:root[data-theme="phosphor-green"] .nav-item-active {
+  background: linear-gradient(90deg, var(--accent-soft), transparent 85%), var(--deck-cavity);
+}
+
+/* Terminal-style inverse selection. */
+:root[data-theme="phosphor-green"] ::selection {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* Boot label - the ignition flash text (see premium-structure.css's
+   .main::before for the shared position/timing). */
+:root[data-theme="phosphor-green"] .main::before {
+  content: "TTY0 \2014  LINK OK";
+}
+
+/* Signature atmosphere - a thin scan raster plus a green-tinted vignette,
+   fixed to the viewport so it sits over every panel the way a glass tube's
+   raster would. Both layers scale with the user's Scanlines and CRT settings.
+   The raster stays at 1px dark / 3px clear and a low alpha: Cold Ballast's
+   earlier, heavier raster read as haze over the map (see that deck's own
+   note), so this one deliberately stays light and leaves heavier texture to
+   the optional Grain setting. */
+:root[data-theme="phosphor-green"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(rgba(0, 0, 0, 0) 0 3px, rgba(0, 12, 4, calc(0.08 * var(--fx-scan-k, 1))) 3px 4px),
+    radial-gradient(ellipse at center, transparent 58%, rgba(0, 10, 4, calc(0.5 * var(--fx-crt-k, 1))) 100%);
+  mix-blend-mode: multiply;
+}

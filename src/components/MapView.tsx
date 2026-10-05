@@ -20,6 +20,8 @@ import MapSignatureScratchpad from "./MapSignatureScratchpad";
 import MapJumpBridgePanel from "./MapJumpBridgePanel";
 import MapAnnotationsPanel from "./MapAnnotationsPanel";
 import { useTrackedEntities } from "../hooks/useTrackedEntities";
+import { useTrackedSystemsActivity } from "../hooks/useTrackedSystemsActivity";
+import { getLikelyGateCamps, GATE_CAMP_KILLS_HIGH } from "../lib/route";
 import { useJumpBridges, type JumpBridgeEntry } from "../hooks/useJumpBridges";
 import { useMapAnnotations, type MapMarker, type MapLine } from "../hooks/useMapAnnotations";
 import {
@@ -71,6 +73,9 @@ import { getCharacterLocation, getCharacterContacts, type SessionCharacter, type
 import { matchContactStanding, standingTier } from "../lib/standings";
 import { resolveEntityNames } from "../lib/wars";
 import { THEME_CHANGE_EVENT, useTheme, isPremiumTheme } from "../hooks/useTheme";
+import { playCue } from "../lib/cues";
+import { killTier, rowAgeFactor } from "../lib/killTier";
+import { useNowCoarse } from "../hooks/useNow";
 
 /** Which last-hour aggregate the background heat glow currently reads from
  * - only one at a time (three overlapping glows would be unreadable), see
@@ -895,6 +900,64 @@ const PULSE_BURST_RING_STAGGER_MS = 220;
 const PULSE_BURST_RING_LIFE_MS = 850;
 const PULSE_BURST_FLASH_MS = 350;
 
+/** Budget for the pulse overlay, so a mass fight cannot make the map expensive.
+ * Every pulsing system in view costs a sprite, a ring and (the dear part) two
+ * shadow-blur strokes plus the sonar burst each frame. The freshest kills get
+ * the full effect, the next tier gets a plain pulsing dot (no blur, no burst),
+ * and anything beyond keeps its static dot with no animation: effects degrade
+ * rather than disappear, newest first. Numbers are starting points; measure on
+ * your own hardware. */
+interface MapBudget {
+  /** Freshest pulsing systems that get the blur glow and sonar burst. */
+  fullEffect: number;
+  /** Pulsing systems that animate at all (the rest hold still). */
+  draw: number;
+  /** Route particles, drawn from whatever the draw budget has left. */
+  particles: number;
+}
+
+/** The Map animation setting (Settings > Display > Effects). Normal is exactly the
+ * budget the map has always had. */
+const MAP_BUDGETS: Record<string, MapBudget> = {
+  low: { fullEffect: 12, draw: 60, particles: 6 },
+  normal: { fullEffect: 30, draw: 150, particles: 12 },
+  high: { fullEffect: 60, draw: 300, particles: 24 },
+};
+
+function readMapBudget(): MapBudget {
+  const value = typeof document !== "undefined" ? document.documentElement.dataset.fxMapfx : undefined;
+  return MAP_BUDGETS[value ?? "normal"] ?? MAP_BUDGETS.normal;
+}
+
+/** How long a real kill leaves its contact trail on the map (premium decks). Trails
+ * cost one small square and ring each and no animation, so they sit outside the
+ * animation budget; the cap only bounds memory on a very busy night. */
+const TRAIL_MS = 10 * 60_000;
+const TRAIL_MAX = 600;
+/** Route particles travel at a fixed screen speed, so a long route does not look
+ * faster than a short one. */
+const ROUTE_PARTICLE_SPEED_PX_S = 70;
+const ROUTE_PARTICLE_SPACING_PX = 90;
+
+/** How long the one-shot scan ring takes to cross the map after a manual refresh. */
+const SCAN_RING_MS = 900;
+
+interface ContactTrail {
+  systemId: number;
+  at: number;
+}
+
+type MapMotion = "off" | "low" | "full";
+
+/** The in-app Motion setting (Settings > Display > Effects), as stamped on the
+ * document by useEffects. Off behaves like reduced motion, Low keeps the
+ * one-shot sonar burst (a warning-class effect) but not the continuous
+ * breathing (an ambient one), Full is everything. */
+function readMapMotion(): MapMotion {
+  const value = typeof document !== "undefined" ? document.documentElement.dataset.fxMotion : undefined;
+  return value === "off" || value === "low" ? value : "full";
+}
+
 /** Shared breathing wave for the system dot itself while a kill's actively
  * landing there - phase-offset per system (via systemId) so a cluster of
  * active systems doesn't throb in lockstep. Returns a value from `floor` up
@@ -1462,6 +1525,20 @@ function MapView({
     return () => query.removeEventListener("change", handleChange);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  /** True when the OS asks for reduced motion or the in-app Motion setting is Off. */
+  function reducedMotionNow(): boolean {
+    return prefersReducedMotionRef.current || readMapMotion() === "off";
+  }
+  // Changing Motion in Settings repaints the map and wakes or rests the pulse loop at once.
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      requestDraw();
+      ensureAnimating();
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-fx-motion", "data-fx-mapfx"] });
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const drawScheduledRef = useRef(false);
   const themeColorsRef = useRef<MapThemeColors>(resolveThemeColors());
   /** Premium-only targeting HUD: the live grid-position readout is written
@@ -1471,6 +1548,26 @@ function MapView({
    * draw loop itself, just for a DOM node instead of a canvas. */
   const coordsHudRef = useRef<HTMLDivElement>(null);
   const lockOnKeyRef = useRef(0);
+  /** Premium map effects. Everything here is read from refs inside the draw
+   * functions (like the other overlay toggles), never from React state. */
+  const premiumRef = useRef(false);
+  const showTrailsRef = useRef(true);
+  const showParticlesRef = useRef(true);
+  /** Keyed by system and kill second so the live ticker and the 30s heat poll,
+   * which both report the same kill, only ever leave one trail. */
+  const trailsRef = useRef<Map<string, ContactTrail>>(new Map());
+  /** True while the overlay holds trails or particles, so the next draw knows to
+   * repaint it (follow a pan or zoom) or clear it (the toggle was just switched off). */
+  const overlayPersistentRef = useRef(false);
+  /** More premium map marks, all read from refs by the overlay pass. */
+  const standingByTierRef = useRef<Map<number, number | null>>(new Map());
+  const campsRef = useRef<Map<number, number>>(new Map());
+  const showCampsRef = useRef(false);
+  const showGridLabelsRef = useRef(true);
+  const trackedSystemIdsRef = useRef<Set<number>>(new Set());
+  const scanRingRef = useRef<{ at: number } | null>(null);
+  const routePushedRef = useRef(false);
+  const drawPulseOverlayRef = useRef<() => void>(() => undefined);
 
   const [theme] = useTheme();
   const premium = isPremiumTheme(theme);
@@ -1564,6 +1661,14 @@ function MapView({
     setTerritoryMode,
     heatMode,
     setHeatMode,
+    showContactTrails,
+    setShowContactTrails,
+    showRouteParticles,
+    setShowRouteParticles,
+    showLikelyCamps,
+    setShowLikelyCamps,
+    showGridLabels,
+    setShowGridLabels,
   } = useMapDisplayPrefs();
   const [contactsNeedReauth, setContactsNeedReauth] = useState<string[]>([]);
   const { bridges: jumpBridges } = useJumpBridges();
@@ -1595,7 +1700,14 @@ function MapView({
   // than waiting for the next kill-pulse frame, which might not come for a
   // while (or ever, if nothing's currently pulsing).
   useEffect(() => {
+    // Every useTheme() instance re-stamps data-theme when it mounts, which is a
+    // mutation even when the value is unchanged; only a real change needs a re-resolve.
+    const paletteKey = () => `${document.documentElement.dataset.theme ?? ""}|${document.documentElement.dataset.fxFaction ?? ""}`;
+    let appliedTheme = paletteKey();
     function handleThemeChange() {
+      const current = paletteKey();
+      if (current === appliedTheme) return;
+      appliedTheme = current;
       themeColorsRef.current = resolveThemeColors();
       // Cached sprites bake in the OLD theme's security colors - stale
       // once the palette changes, so they're dropped and lazily rebuilt
@@ -1605,8 +1717,18 @@ function MapView({
       activeDiscSpriteCacheRef.current.clear();
       requestDraw();
     }
+    // The theme-change event fires from setTheme() BEFORE useTheme's effect has
+    // stamped the new data-theme on <html>, so reading the CSS variables at that
+    // moment returns the OLD theme's colours (the map kept the previous deck's
+    // palette until a reload). Watching the attribute itself runs this once the new
+    // theme is really in effect; the event stays as a cheap fallback.
     window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange);
-    return () => window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+    const observer = new MutationObserver(handleThemeChange);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-fx-faction"] });
+    return () => {
+      window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+      observer.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const reportError = useErrorReporter();
@@ -1637,6 +1759,7 @@ function MapView({
       const existing = heatMapRef.current.get(kill.system_id);
       heatMapRef.current.set(kill.system_id, { count: (existing?.count ?? 0) + 1, mostRecentAt: killedAt });
       heatFirstNoticedAtRef.current.set(kill.system_id, now);
+      recordTrail(kill.system_id, killedAt);
       sawNew = true;
     }
     if (sawNew) {
@@ -1691,9 +1814,10 @@ function MapView({
   const routeRef = useRef<number[]>([]);
   useEffect(() => {
     routeRef.current = route;
+    routePushedRef.current = !!(pushedRoute && pushedRoute.length > 1);
     requestDraw();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route]);
+  }, [route, pushedRoute]);
 
   const regionsById = mapData ? new Map(mapData.regions.map((r) => [r.id, r.name])) : new Map<number, string>();
 
@@ -1937,7 +2061,7 @@ function MapView({
       ([...heatMapRef.current.keys()].some(
         (systemId) => Date.now() - (heatFirstNoticedAtRef.current.get(systemId) ?? 0) < PULSE_ANIMATION_MS,
       ) ||
-        (selectedIdRef.current != null && !prefersReducedMotionRef.current && Date.now() - selectedAtRef.current < 150))
+        (selectedIdRef.current != null && !reducedMotionNow() && Date.now() - selectedAtRef.current < 150))
     ) {
       ensureAnimating();
     }
@@ -2219,9 +2343,24 @@ function MapView({
         const fromSystem = systemByIdRef.current.get(bridge.fromSystemId);
         const toSystem = systemByIdRef.current.get(bridge.toSystemId);
         if (!fromSystem || !toSystem) continue;
+        const ax = toScreenX(fromSystem.x);
+        const ay = toScreenY(fromSystem.y);
+        const bx = toScreenX(toSystem.x);
+        const by = toScreenY(toSystem.y);
         ctx.beginPath();
-        ctx.moveTo(toScreenX(fromSystem.x), toScreenY(fromSystem.y));
-        ctx.lineTo(toScreenX(toSystem.x), toScreenY(toSystem.y));
+        ctx.moveTo(ax, ay);
+        if (premiumRef.current) {
+          // Premium decks draw a bridge as a shallow arc, always bulging upward so a
+          // bridge reads as a jump over the gate lines rather than another gate line.
+          const dx = bx - ax;
+          const dy = by - ay;
+          const dist = Math.hypot(dx, dy) || 1;
+          const side = dx / dist > 0 ? -1 : 1;
+          const bulge = dist * 0.18;
+          ctx.quadraticCurveTo((ax + bx) / 2 + (-dy / dist) * side * bulge, (ay + by) / 2 + (dx / dist) * side * bulge, bx, by);
+        } else {
+          ctx.lineTo(bx, by);
+        }
         ctx.stroke();
       }
       ctx.restore();
@@ -2288,13 +2427,16 @@ function MapView({
           routePath.lineTo(sx, sy);
         }
       }
-      ctx.setLineDash([]);
+      // Premium decks draw a route you are only planning as a row of dots, and solid
+      // once it has been pushed to the game; the standard themes always draw it solid.
+      ctx.setLineDash(premiumRef.current && !routePushedRef.current ? [0.5, 8] : []);
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       ctx.lineWidth = 3;
       ctx.globalAlpha = 0.95;
       ctx.strokeStyle = accentHex;
       ctx.stroke(routePath);
+      ctx.setLineDash([]);
       ctx.lineCap = "butt";
       ctx.globalAlpha = 1;
     }
@@ -2445,11 +2587,17 @@ function MapView({
       // (pulseWave holds steady at 1 throughout) - the continuous redraw
       // loop can stay off entirely rather than spinning at full refresh
       // rate to redraw an unchanging steady state.
-      if (isDotActive && !prefersReducedMotionRef.current) anyVisiblePulse = true;
+      if (
+        isDotActive &&
+        !reducedMotionNow() &&
+        // At Motion Low only the first PULSE_BURST_MS of a pulse animates, so the loop can rest after it.
+        (readMapMotion() !== "low" || now - (heatFirstNoticedAtRef.current.get(system.id) ?? 0) < PULSE_BURST_MS)
+      )
+        anyVisiblePulse = true;
       // Keeps the loop alive just long enough for the selection reticle's
       // brief assemble-in animation (see drawSelectionReticle) to actually
       // play, rather than only ever redrawing on the next unrelated event.
-      if (isSelected && !prefersReducedMotionRef.current && now - selectedAtRef.current < 150) anyVisiblePulse = true;
+      if (isSelected && !reducedMotionNow() && now - selectedAtRef.current < 150) anyVisiblePulse = true;
       // This canvas never renders the live breathing animation itself any
       // more - see drawPulseOverlay, a separate and much cheaper canvas
       // layered on top that draws just the actively-pulsing dots each
@@ -2702,7 +2850,7 @@ function MapView({
       // now, "selected" needs its own distinct silhouette rather than a
       // fourth pin in a different color.
       if (isSelected) {
-        const selectionProgress = prefersReducedMotionRef.current
+        const selectionProgress = reducedMotionNow()
           ? 1
           : 1 - Math.pow(1 - clamp((now - selectedAtRef.current) / 150, 0, 1), 3);
         drawSelectionReticle(ctx, sx, sy, baseRadius + 2, inkColor, selectionProgress);
@@ -2759,7 +2907,7 @@ function MapView({
       const now = performance.now();
       for (const anim of flightAnimationsRef.current.values()) {
         const progress = clamp((now - anim.startedAt) / anim.durationMs, 0, 1);
-        const eased = prefersReducedMotionRef.current ? 1 : easeInOutCubic(progress);
+        const eased = reducedMotionNow() ? 1 : easeInOutCubic(progress);
         const px = toScreenX(anim.fromX + (anim.toX - anim.fromX) * eased);
         const py = toScreenY(anim.fromY + (anim.toY - anim.fromY) * eased);
         drawPortrait(ctx, px, py, flightPortraitRadius, anim.image, inkColor);
@@ -2923,6 +3071,10 @@ function MapView({
       ctx.textAlign = "left";
       ctx.globalAlpha = 1;
     }
+    // Trails and route particles are drawn on the overlay but have
+    // to follow every pan and zoom; and if they were just switched off, one more
+    // overlay pass clears them.
+    if (overlayPersistentWanted() || overlayPersistentRef.current) drawPulseOverlay();
   }
 
   /** Coalesces any number of draw() requests within the same tick into a single call, matching zKillboard's own requestDraw pattern. Without this, high-frequency events like mousemove over the map's dense system clusters can each trigger their own full (expensive) redraw, backing up the main thread badly enough that frames visibly drop content like the heat rings.
@@ -3026,7 +3178,8 @@ function MapView({
     const isFocusFilterActive = showFwContestedRef.current || showSovRef.current || showIncursionsRef.current;
     const systemById = systemByIdRef.current;
     const { mutedRgb, mutedHex, securityHexByTenth, securityRgbByTenth } = themeColorsRef.current;
-    const reducedMotion = prefersReducedMotionRef.current;
+    const reducedMotion = reducedMotionNow();
+    const ambientOff = readMapMotion() === "low";
 
     // Same "only while a real kill just landed, never off the loop's own
     // schedule" gate draw() used to apply inline - reducedMotion never
@@ -3037,14 +3190,242 @@ function MapView({
     // loop stops rescheduling itself.
     let anyActive = false;
 
+    const persistentOn = premiumRef.current;
+    let persistentDrawn = false;
+
+    if (persistentOn) {
+      const { accentRgb, mutedHex: markMutedHex } = themeColorsRef.current;
+      const ring = (sx: number, sy: number, r: number, shape: "circle" | "diamond" | "square") => {
+        ctx.beginPath();
+        if (shape === "circle") {
+          ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        } else if (shape === "diamond") {
+          ctx.moveTo(sx, sy - r * 1.25);
+          ctx.lineTo(sx + r * 1.25, sy);
+          ctx.lineTo(sx, sy + r * 1.25);
+          ctx.lineTo(sx - r * 1.25, sy);
+          ctx.closePath();
+        } else {
+          ctx.rect(sx - r, sy - r, r * 2, r * 2);
+        }
+        ctx.stroke();
+      };
+
+      // Standing-coded contacts: with the Territory overlay in standings mode, every
+      // sovereign system whose holder you have a standing with gets a ring whose SHAPE says
+      // what that standing is: a diamond for hostile, a square for friendly, a circle for
+      // neutral. Colour repeats the same fact, so it is never colour alone. A holder with no
+      // matching contact gets no mark, the same "no data is not neutral" rule the territory
+      // fill follows. The marks are batched into one path per tier, so thousands of systems
+      // cost a handful of strokes per redraw.
+      if (showTerritoryRef.current && territoryModeRef.current === "standings" && standingByTierRef.current.size > 0) {
+        const byTier = new Map<number, Path2D>();
+        const r = dotRadius * 2.3;
+        for (const [systemId, tier] of standingByTierRef.current) {
+          if (tier == null) continue;
+          const markSystem = systemById.get(systemId);
+          if (!markSystem || !inView(markSystem.x, markSystem.y)) continue;
+          let path = byTier.get(tier);
+          if (!path) {
+            path = new Path2D();
+            byTier.set(tier, path);
+          }
+          const sx = toScreenX(markSystem.x);
+          const sy = toScreenY(markSystem.y);
+          if (tier <= 1) {
+            path.moveTo(sx, sy - r * 1.25);
+            path.lineTo(sx + r * 1.25, sy);
+            path.lineTo(sx, sy + r * 1.25);
+            path.lineTo(sx - r * 1.25, sy);
+            path.closePath();
+          } else if (tier >= 3) {
+            path.rect(sx - r, sy - r, r * 2, r * 2);
+          } else {
+            path.moveTo(sx + r, sy);
+            path.arc(sx, sy, r, 0, Math.PI * 2);
+          }
+        }
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 0.9;
+        for (const [tier, path] of byTier) {
+          ctx.strokeStyle = STANDING_TIER_COLORS[tier] ?? markMutedHex;
+          ctx.stroke(path);
+          persistentDrawn = true;
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // Threat rings: a dashed ring around every system you track, quiet grey until its
+      // last-hour kill count climbs, then amber, then red (the same lines as the gate boards).
+      if (trackedSystemIdsRef.current.size > 0) {
+        ctx.lineWidth = 1.3;
+        ctx.setLineDash([3, 3]);
+        for (const systemId of trackedSystemIdsRef.current) {
+          const markSystem = systemById.get(systemId);
+          if (!markSystem || !inView(markSystem.x, markSystem.y)) continue;
+          const kills = heatMapRef.current.get(systemId)?.count ?? 0;
+          ctx.strokeStyle = kills >= GATE_CAMP_KILLS_HIGH ? "#e5584d" : kills >= 2 ? "#e0a85c" : markMutedHex;
+          ctx.globalAlpha = kills >= 2 ? 0.95 : 0.6;
+          ring(toScreenX(markSystem.x), toScreenY(markSystem.y), dotRadius * 3, "circle");
+          persistentDrawn = true;
+        }
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+      }
+
+      // Likely-camp overlay: a red ring on every system with a camped gate, wider and
+      // brighter the more kills the busiest gate there has had in the last hour.
+      if (showCampsRef.current && campsRef.current.size > 0) {
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([]);
+        for (const [systemId, kills] of campsRef.current) {
+          const markSystem = systemById.get(systemId);
+          if (!markSystem || !inView(markSystem.x, markSystem.y)) continue;
+          ctx.strokeStyle = "#e5584d";
+          ctx.globalAlpha = Math.min(0.95, 0.35 + kills * 0.06);
+          ring(toScreenX(markSystem.x), toScreenY(markSystem.y), dotRadius * 3.2 + Math.min(kills, 12) * 0.5, "circle");
+          persistentDrawn = true;
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // Gate icons: a small gate (two posts and a lintel) beside every system on the
+      // active route, so a route reads as a run of gates and not just a line.
+      if (routeRef.current.length > 1 && routeRef.current.length <= 80) {
+        ctx.strokeStyle = `rgb(${accentRgb})`;
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([]);
+        ctx.lineCap = "square";
+        for (const id of routeRef.current) {
+          const markSystem = systemById.get(id);
+          if (!markSystem || !inView(markSystem.x, markSystem.y)) continue;
+          const gx = toScreenX(markSystem.x) + dotRadius * 1.8;
+          const gy = toScreenY(markSystem.y) - dotRadius * 1.8;
+          ctx.beginPath();
+          ctx.moveTo(gx - 3, gy + 4);
+          ctx.lineTo(gx - 3, gy - 3);
+          ctx.lineTo(gx + 3, gy - 3);
+          ctx.lineTo(gx + 3, gy + 4);
+          ctx.moveTo(gx - 4.5, gy - 4.5);
+          ctx.lineTo(gx + 4.5, gy - 4.5);
+          ctx.stroke();
+          persistentDrawn = true;
+        }
+        ctx.lineCap = "butt";
+      }
+
+      // Grid labels: the map's own coordinates (the same units as the cursor readout,
+      // GRID x / y) along the top and left edges at round steps, following pan and zoom.
+      if (showGridLabelsRef.current) {
+        const GRID_UNIT = 1e15;
+        const steps = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000];
+        const minPx = 120;
+        const step = steps.find((s) => s * GRID_UNIT * scale >= minPx) ?? steps[steps.length - 1];
+        const stepData = step * GRID_UNIT;
+        const decimals = step < 0.1 ? 2 : step < 1 ? 2 : step < 5 ? 1 : 0;
+        ctx.font = "9px ui-monospace, Consolas, monospace";
+        ctx.fillStyle = `rgba(${accentRgb}, 0.6)`;
+        ctx.strokeStyle = `rgba(${accentRgb}, 0.35)`;
+        ctx.lineWidth = 1;
+        ctx.textBaseline = "top";
+        ctx.textAlign = "center";
+        for (let k = Math.ceil(dataMinX / stepData); k * stepData <= dataMaxX; k++) {
+          const sx = toScreenX(k * stepData);
+          if (sx < 44 || sx > width - 44) continue;
+          ctx.fillText((k * step).toFixed(decimals), sx, 20);
+          ctx.beginPath();
+          ctx.moveTo(sx, 15);
+          ctx.lineTo(sx, 19);
+          ctx.stroke();
+        }
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        for (let k = Math.ceil(dataMinY / stepData); k * stepData <= dataMaxY; k++) {
+          const sy = toScreenY(k * stepData);
+          if (sy < 44 || sy > height - 44) continue;
+          ctx.fillText((k * step).toFixed(decimals), 24, sy);
+          ctx.beginPath();
+          ctx.moveTo(18, sy);
+          ctx.lineTo(22, sy);
+          ctx.stroke();
+        }
+        ctx.textBaseline = "alphabetic";
+        persistentDrawn = true;
+      }
+
+      // The scan ring: one ring crosses the map, centred on the selected system (else
+      // your location, else the middle), after a hand-pressed refresh. Plays once.
+      if (scanRingActive() && scanRingRef.current) {
+        const t = (now - scanRingRef.current.at) / SCAN_RING_MS;
+        const focusId = selectedIdRef.current ?? currentSystemIdRef.current;
+        const focusSystem = focusId != null ? systemById.get(focusId) : undefined;
+        const cx = focusSystem ? toScreenX(focusSystem.x) : width / 2;
+        const cy = focusSystem ? toScreenY(focusSystem.y) : height / 2;
+        const reach = Math.hypot(width, height) * 0.6;
+        for (const [delay, strength] of [[0, 0.8], [0.12, 0.4]] as const) {
+          const u = Math.min(1, Math.max(0, (t - delay) / (1 - delay)));
+          if (u <= 0 || u >= 1) continue;
+          ctx.beginPath();
+          ctx.arc(cx, cy, reach * (1 - Math.pow(1 - u, 3)), 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(${accentRgb}, ${(strength * (1 - u)).toFixed(3)})`;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+        persistentDrawn = true;
+      }
+    }
+
+    // Contact trails: every real kill leaves a square and a ring that fade over ten
+    // minutes, so the map shows where the action WAS as well as where it is. Static
+    // and cheap, so they keep drawing at every Motion level.
+    if (persistentOn && showTrailsRef.current && trailsRef.current.size > 0) {
+      const { accentRgb } = themeColorsRef.current;
+      const side = Math.max(2, dotRadius * 1.3);
+      for (const [key, trail] of trailsRef.current) {
+        const age = now - trail.at;
+        if (age >= TRAIL_MS) {
+          trailsRef.current.delete(key);
+          continue;
+        }
+        const trailSystem = systemById.get(trail.systemId);
+        if (!trailSystem || !inView(trailSystem.x, trailSystem.y)) continue;
+        const fade = 1 - age / TRAIL_MS;
+        const tx = toScreenX(trailSystem.x);
+        const ty = toScreenY(trailSystem.y);
+        ctx.strokeStyle = `rgba(${accentRgb}, ${(fade * 0.55).toFixed(3)})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(tx, ty, side * 1.6, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = `rgba(${accentRgb}, ${(fade * 0.85).toFixed(3)})`;
+        ctx.fillRect(tx - side / 2, ty - side / 2, side, side);
+        persistentDrawn = true;
+      }
+    }
+
+    // Gather what is actually pulsing in view, freshest kill first, so the budget
+    // below always spends on the newest events.
+    const pulsing: Array<{ systemId: number; entry: SystemHeat; firstNoticed: number; system: MapSystem }> = [];
     for (const [systemId, entry] of heatMapRef.current) {
       if (entry.count <= 0) continue;
       const firstNoticed = heatFirstNoticedAtRef.current.get(systemId) ?? 0;
       if (now - firstNoticed >= PULSE_ANIMATION_MS) continue;
       const system = systemById.get(systemId);
       if (!system || !inView(system.x, system.y)) continue;
+      pulsing.push({ systemId, entry, firstNoticed, system });
+    }
+    pulsing.sort((a, b) => b.firstNoticed - a.firstNoticed);
+    const budget = readMapBudget();
+    const drawCount = Math.min(pulsing.length, budget.draw);
 
-      if (!reducedMotion) anyActive = true;
+    for (let rank = 0; rank < drawCount; rank++) {
+      const { systemId, entry, firstNoticed, system } = pulsing[rank];
+      // Only the freshest PULSE_FULL_EFFECT_MAX get the blur glow and sonar burst.
+      const fullEffect = rank < budget.fullEffect;
+
+      // At Motion Low only the burst window animates; after it the dot just holds.
+      if (!reducedMotion && (!ambientOff || now - firstNoticed < PULSE_BURST_MS)) anyActive = true;
 
       // Winds the breathing down to nothing over the final PULSE_FADE_MS
       // instead of just cutting off wherever it happens to be mid-cycle -
@@ -3054,7 +3435,7 @@ function MapView({
       const elapsed = now - firstNoticed;
       const fadeStart = PULSE_ANIMATION_MS - PULSE_FADE_MS;
       const fadeFactor = elapsed <= fadeStart ? 1 : clamp(1 - (elapsed - fadeStart) / PULSE_FADE_MS, 0, 1);
-      const killPulse = pulseWave(now, systemId, 0, reducedMotion) * fadeFactor;
+      const killPulse = pulseWave(now, systemId, 0, reducedMotion || ambientOff) * fadeFactor;
       const dotAlpha = 0.45 + killPulse * 0.55;
       const heatBump = heatIntensity(entry.count) * 3.4;
       const isSelected = systemId === selectedIdRef.current;
@@ -3078,7 +3459,7 @@ function MapView({
       const sx = toScreenX(system.x);
       const sy = toScreenY(system.y);
 
-      if (!isFocusFilterActive) {
+      if (!isFocusFilterActive && fullEffect) {
         // The exact same neon recipe the ticker's own security/wormhole/
         // abyssal badges use (.map-ticker-sec-badge etc in App.css: two
         // stacked `text-shadow` blurs, both the badge's own color at 55%
@@ -3127,6 +3508,68 @@ function MapView({
       ctx.globalAlpha = 1;
     }
 
+    // Route particles: a few small lights running origin to destination along the
+    // active route. Lowest priority, so they only take what the draw budget has left
+    // after the pulses, and they stop entirely at Motion Low or Off.
+    if (routeParticlesActive()) {
+      const points: Array<[number, number]> = [];
+      for (const id of routeRef.current) {
+        const routeSystem = systemById.get(id);
+        if (routeSystem) points.push([toScreenX(routeSystem.x), toScreenY(routeSystem.y)]);
+      }
+      const cumulative = [0];
+      for (let i = 1; i < points.length; i++) {
+        cumulative.push(cumulative[i - 1] + Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]));
+      }
+      const total = cumulative[cumulative.length - 1] ?? 0;
+      const count = Math.min(
+        budget.particles,
+        Math.max(0, budget.draw - drawCount),
+        Math.max(2, Math.floor(total / ROUTE_PARTICLE_SPACING_PX)),
+      );
+      if (total > 8 && count > 0) {
+        const { accentRgb } = themeColorsRef.current;
+        const spacing = total / count;
+        const travelled = ((now / 1000) * ROUTE_PARTICLE_SPEED_PX_S) % total;
+        const pointAt = (distance: number): [number, number] => {
+          const d = ((distance % total) + total) % total;
+          let seg = 1;
+          while (seg < cumulative.length - 1 && cumulative[seg] < d) seg++;
+          const segLength = cumulative[seg] - cumulative[seg - 1] || 1;
+          const t = (d - cumulative[seg - 1]) / segLength;
+          return [
+            points[seg - 1][0] + (points[seg][0] - points[seg - 1][0]) * t,
+            points[seg - 1][1] + (points[seg][1] - points[seg - 1][1]) * t,
+          ];
+        };
+        const { inkColor } = themeColorsRef.current;
+        for (let i = 0; i < count; i++) {
+          const head = travelled + i * spacing;
+          // A short fading tail behind each light so the direction of travel reads.
+          for (let k = 3; k >= 1; k--) {
+            const [tx, ty] = pointAt(head - k * 7);
+            ctx.fillStyle = `rgba(${accentRgb}, ${(0.55 / k).toFixed(3)})`;
+            ctx.beginPath();
+            ctx.arc(tx, ty, Math.max(1.2, 3.2 - k * 0.6), 0, Math.PI * 2);
+            ctx.fill();
+          }
+          // The light itself: an accent halo with a bright core, so it stays visible on
+          // a route line that is itself drawn in a similar colour.
+          const [hx, hy] = pointAt(head);
+          ctx.fillStyle = `rgba(${accentRgb}, 0.95)`;
+          ctx.beginPath();
+          ctx.arc(hx, hy, 3.8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = inkColor;
+          ctx.beginPath();
+          ctx.arc(hx, hy, 1.7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        persistentDrawn = true;
+      }
+    }
+
+    overlayPersistentRef.current = persistentDrawn;
     hasVisiblePulseRef.current = anyActive;
   }
 
@@ -3211,7 +3654,7 @@ function MapView({
     const flightActive = pruneExpiredFlightAnimations();
     if (
       flightActive ||
-      (selectedIdRef.current != null && !prefersReducedMotionRef.current && Date.now() - selectedAtRef.current < 150)
+      (selectedIdRef.current != null && !reducedMotionNow() && Date.now() - selectedAtRef.current < 150)
     ) {
       draw();
     } else {
@@ -3224,7 +3667,64 @@ function MapView({
    * neither loop-continuation check below cared about anything but kill
    * pulses before this feature existed. */
   function shouldKeepAnimating(): boolean {
-    return hasVisiblePulseRef.current || flightAnimationsRef.current.size > 0;
+    return hasVisiblePulseRef.current || flightAnimationsRef.current.size > 0 || routeParticlesActive() || scanRingActive();
+  }
+
+  function scanRingActive(): boolean {
+    return premiumRef.current && scanRingRef.current !== null && Date.now() - scanRingRef.current.at < SCAN_RING_MS;
+  }
+
+  /** Systems with a camped gate: the busiest gate's last-hour kill count per origin system. */
+  function loadLikelyCamps() {
+    getLikelyGateCamps()
+      .then((camps) => {
+        const next = new Map<number, number>();
+        for (const c of camps) next.set(c.origin_system_id, Math.max(next.get(c.origin_system_id) ?? 0, c.kills_last_hour));
+        campsRef.current = next;
+        requestDraw();
+      })
+      .catch(() => undefined);
+  }
+
+  /** Route particles are an ambient, premium-only effect: they run only at Motion
+   * Full, only while a route exists, and never while the window is hidden. */
+  function routeParticlesActive(): boolean {
+    return (
+      premiumRef.current &&
+      showParticlesRef.current &&
+      routeRef.current.length > 1 &&
+      readMapMotion() === "full" &&
+      !document.hidden
+    );
+  }
+
+  /** Whether the overlay has content that must follow every pan and zoom. */
+  function overlayPersistentWanted(): boolean {
+    if (!premiumRef.current) return false;
+    return (
+      (showTrailsRef.current && trailsRef.current.size > 0) ||
+      routeParticlesActive() ||
+      showGridLabelsRef.current ||
+      scanRingActive() ||
+      trackedSystemIdsRef.current.size > 0 ||
+      (showCampsRef.current && campsRef.current.size > 0) ||
+      (showTerritoryRef.current && territoryModeRef.current === "standings" && standingByTierRef.current.size > 0) ||
+      routeRef.current.length > 1
+    );
+  }
+
+  /** A real kill leaves a trail for TRAIL_MS, aged from when it actually happened,
+   * so a kill that was already minutes old when this client first saw it starts
+   * partly faded, and one older than the window leaves nothing. */
+  function recordTrail(systemId: number, at: number) {
+    if (!Number.isFinite(at) || Date.now() - at >= TRAIL_MS) return;
+    const trails = trailsRef.current;
+    trails.set(`${systemId}:${Math.floor(at / 1000)}`, { systemId, at });
+    if (trails.size > TRAIL_MAX) {
+      // Maps iterate in insertion order, so the first key is the oldest.
+      const oldest = trails.keys().next().value;
+      if (oldest !== undefined) trails.delete(oldest);
+    }
   }
 
   function ensureAnimating() {
@@ -3377,10 +3877,12 @@ function MapView({
     const cells = territoryCellsRef.current;
     if (cells.size === 0 || contactsRef.current.length === 0) {
       standingsTerritoryPathsRef.current = new Map();
+      standingByTierRef.current = new Map();
       return;
     }
     try {
       const ownerBySystemId = new Map<number, number>();
+      const tiersForShapes = new Map<number, number | null>();
       for (const systemId of cells.keys()) {
         const sov = sovRef.current.get(systemId);
         if (!sov) continue;
@@ -3390,8 +3892,11 @@ function MapView({
           allianceId: sov.alliance_id,
         });
         const tier = standingTier(standing);
+        // null (no contact entry matches) stays in the shape map as "unknown".
+        tiersForShapes.set(systemId, tier);
         if (tier !== null) ownerBySystemId.set(systemId, tier);
       }
+      standingByTierRef.current = tiersForShapes;
       standingsTerritoryPathsRef.current = buildGroupedCellPaths(cells, ownerBySystemId);
     } catch (err) {
       reportError(`Standings territory overlay failed to update: ${String(err)}`);
@@ -3415,7 +3920,13 @@ function MapView({
    * array-filtering version prone to the 150-kill global cap in the first
    * place) - the 30s interval below plus the focus/visibility effect keep
    * it fresh enough for a "last hour" stat. */
-  function resync() {
+  function resync(manual = false) {
+    // A hand-pressed refresh sends one ring out across the map (premium decks).
+    if (manual === true && premiumRef.current && readMapMotion() !== "off") {
+      scanRingRef.current = { at: Date.now() };
+      ensureAnimating();
+    }
+    if (showCampsRef.current) loadLikelyCamps();
     getSystemKillHeat()
       .then((heat) => {
         const now = Date.now();
@@ -3435,6 +3946,7 @@ function MapView({
         for (const [systemId, entry] of nextHeatMap) {
           if (previousHeatMap.get(systemId)?.mostRecentAt !== entry.mostRecentAt) {
             heatFirstNoticedAtRef.current.set(systemId, now);
+            recordTrail(systemId, entry.mostRecentAt);
           }
         }
         heatMapRef.current = nextHeatMap;
@@ -3543,8 +4055,13 @@ function MapView({
 
   useEffect(() => {
     return () => {
+      // Reset the ids as well as stopping the loops: ensureAnimating() treats a non-null
+      // id as "already running", so a stale id (left by a dev-mode remount, say) would
+      // stop the loop from ever starting again.
       if (animFrameRef.current !== null) window.clearInterval(animFrameRef.current);
+      animFrameRef.current = null;
       if (rafPulseIdRef.current !== null) cancelAnimationFrame(rafPulseIdRef.current);
+      rafPulseIdRef.current = null;
     };
   }, []);
 
@@ -3567,10 +4084,14 @@ function MapView({
     function handleVisible() {
       if (document.visibilityState === "visible") resync();
     }
-    window.addEventListener("focus", resync);
+    // Wrapped so the focus event is not mistaken for the "manual" argument.
+    function handleFocus() {
+      resync();
+    }
+    window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisible);
     return () => {
-      window.removeEventListener("focus", resync);
+      window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3615,6 +4136,51 @@ function MapView({
     requestDraw();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showIncursions]);
+
+  drawPulseOverlayRef.current = drawPulseOverlay;
+  useEffect(() => {
+    premiumRef.current = premium;
+    showTrailsRef.current = showContactTrails;
+    showParticlesRef.current = showRouteParticles;
+    showGridLabelsRef.current = showGridLabels;
+    showCampsRef.current = showLikelyCamps;
+    if (showLikelyCamps) loadLikelyCamps();
+    else campsRef.current = new Map();
+    requestDraw();
+    if (routeParticlesActive()) ensureAnimating();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [premium, showContactTrails, showRouteParticles, showGridLabels, showLikelyCamps, route]);
+
+  // The systems you track, for the threat rings drawn around them.
+  const { entries: trackedSystemEntries } = useTrackedSystemsActivity();
+  useEffect(() => {
+    const ids = new Set<number>();
+    for (const entry of trackedSystemEntries) {
+      if (entry.type === "system" || entry.type === "gate") for (const id of entry.systemIds) ids.add(id);
+    }
+    trackedSystemIdsRef.current = ids;
+    requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackedSystemEntries]);
+
+  // A trail fades over ten minutes, far too slowly for the pulse loop; one repaint
+  // every few seconds is enough to see it dim. Hidden windows skip it, and the
+  // loop (which stops while hidden) is woken again when the window comes back.
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.hidden) return;
+      if (premiumRef.current && showTrailsRef.current && trailsRef.current.size > 0) drawPulseOverlayRef.current();
+    }, 4000);
+    function onVisible() {
+      if (!document.hidden) ensureAnimating();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     showDangerZoneRef.current = showDangerZone;
@@ -4029,6 +4595,7 @@ function MapView({
           setPinnedHover(newPinnedHover);
           lockOnKeyRef.current += 1;
           setLockOn(picked ? { clientX: e.clientX, clientY: e.clientY, key: lockOnKeyRef.current } : null);
+          if (picked) playCue("lock");
           requestDraw();
         }
       }
@@ -4462,6 +5029,43 @@ function MapView({
                         />
                         Danger Zone
                       </label>
+                      {premium && (
+                        <>
+                          <label
+                            className="map-filters-row"
+                            title="Leave a fading mark at every system where a kill just happened, for ten minutes"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={showContactTrails}
+                              onChange={(e) => setShowContactTrails(e.target.checked)}
+                            />
+                            Contact Trails
+                          </label>
+                          <label
+                            className="map-filters-row"
+                            title="Small lights running along your active route (needs Motion set to Full)"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={showRouteParticles}
+                              onChange={(e) => setShowRouteParticles(e.target.checked)}
+                            />
+                            Route Particles
+                          </label>
+                          <label
+                            className="map-filters-row"
+                            title="Ring every system that has a camped gate, brighter the more kills there have been in the last hour"
+                          >
+                            <input type="checkbox" checked={showLikelyCamps} onChange={(e) => setShowLikelyCamps(e.target.checked)} />
+                            Likely Camps
+                          </label>
+                          <label className="map-filters-row" title="Label the map's coordinates along its top and left edges">
+                            <input type="checkbox" checked={showGridLabels} onChange={(e) => setShowGridLabels(e.target.checked)} />
+                            Grid Labels
+                          </label>
+                        </>
+                      )}
                       <label
                         className="map-filters-row"
                         title="Draw live Thera/Turnur wormhole connections from EVE-Scout"
@@ -4539,7 +5143,7 @@ function MapView({
               <button
                 type="button"
                 className="map-icons-toggle"
-                onClick={resync}
+                onClick={() => resync(true)}
                 title="Force the heat map and pulse to refresh right now, in case they've gone stale"
               >
                 <RefreshCw size={12} strokeWidth={2} />
@@ -4723,7 +5327,21 @@ function MapView({
             )}
           </div>
 
-          <div className="map-canvas-wrap">
+          <div
+            className="map-canvas-wrap"
+            onPointerMove={(e) => {
+              // A tiny shift of the HUD frame against the pointer (premium decks, Motion Full
+              // only, see premium-signal.css). Written straight to CSS variables, never state.
+              if (!premiumRef.current) return;
+              const box = e.currentTarget.getBoundingClientRect();
+              e.currentTarget.style.setProperty("--hud-px", String(((e.clientX - box.left) / box.width - 0.5) * 2));
+              e.currentTarget.style.setProperty("--hud-py", String(((e.clientY - box.top) / box.height - 0.5) * 2));
+            }}
+            onPointerLeave={(e) => {
+              e.currentTarget.style.setProperty("--hud-px", "0");
+              e.currentTarget.style.setProperty("--hud-py", "0");
+            }}
+          >
             {loading ? (
               <p className="detail-empty">Loading universe map...</p>
             ) : (
@@ -5135,6 +5753,9 @@ function TickerRow({ kill, severity, isCurrentLocation, onSelect, onSetLocation,
   // it's worth calling out by name, not just folded into the same red/
   // amber proximity tint severity already uses.
   const { entities: trackedEntities } = useTrackedEntities();
+  const [theme] = useTheme();
+  const premiumRow = isPremiumTheme(theme);
+  const rowNow = useNowCoarse(premiumRow);
   const trackedVictimName =
     kill.victim_character_id != null &&
     trackedEntities.some((e) => e.kind === "character" && e.entity_id === kill.victim_character_id)
@@ -5163,7 +5784,8 @@ function TickerRow({ kill, severity, isCurrentLocation, onSelect, onSetLocation,
     <div
       role="button"
       tabIndex={0}
-      className={`map-ticker-row${severity ? ` map-ticker-row-alert-${severity}` : ""}${trackedVictimName ? " map-ticker-row-tracked" : ""}`}
+      className={`map-ticker-row${severity ? ` map-ticker-row-alert-${severity}` : ""}${trackedVictimName ? " map-ticker-row-tracked" : ""} ticker-tier-${severity || trackedVictimName ? 1 : killTier(kill)}`}
+      style={premiumRow ? ({ "--row-age": rowAgeFactor(kill.time, rowNow).toFixed(3) } as React.CSSProperties) : undefined}
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {

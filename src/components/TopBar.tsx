@@ -4,6 +4,17 @@ import { getServerStatus, type Session, type SessionCharacter } from "../lib/eve
 import { searchSystemsLive, type SystemSearchMatch } from "../lib/map";
 import { useLocationTracking, type ProximityRadius } from "../hooks/useLocationTracking";
 import { useRecentActivity } from "../hooks/useRecentActivity";
+import { useTheme, isPremiumTheme, THEMES } from "../hooks/useTheme";
+import { useNow } from "../hooks/useNow";
+import { useEventLog } from "../lib/eventLog";
+import SignalLamp from "./premium/SignalLamp";
+import SegmentDisplay from "./premium/SegmentDisplay";
+import Sparkline from "./premium/Sparkline";
+import { getKillRateBins } from "../lib/route";
+import { useNetActivity } from "../hooks/useNetActivity";
+import StatusLamp from "./premium/StatusLamp";
+import { OPEN_SYSTEM_LOG_EVENT } from "./premium/SystemLogPanel";
+import { OPEN_COMMAND_PALETTE_EVENT } from "./premium/CommandPalette";
 import { useFavouritePages } from "../hooks/useFavouritePages";
 import { SUB_TABS } from "../lib/subTabs";
 import StatusChip from "./StatusChip";
@@ -30,6 +41,9 @@ interface TopBarProps {
 /** EVE's in-game clock is always UTC, no timezone offset - shown so time-sensitive
  * things (skill queue finishes, market order expiry) can be read against it directly. */
 function EveTimeClock() {
+  const [theme] = useTheme();
+  // A few premium decks draw the clock as a seven-segment readout instead of text.
+  const segmented = THEMES.find((t) => t.id === theme)?.segmentClock === true;
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
@@ -40,7 +54,16 @@ function EveTimeClock() {
     <div className="eve-time-clock">
       <span className="eve-time-label">EVE Time</span>
       <span className="eve-time-value">
-        {pad(now.getUTCHours())}:{pad(now.getUTCMinutes())}:{pad(now.getUTCSeconds())}
+        {segmented ? (
+          <SegmentDisplay
+            text={`${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`}
+            label={`EVE time ${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}`}
+          />
+        ) : (
+          <>
+            {pad(now.getUTCHours())}:{pad(now.getUTCMinutes())}:{pad(now.getUTCSeconds())}
+          </>
+        )}
       </span>
     </div>
   );
@@ -80,7 +103,7 @@ const SERVER_STATUS_POLL_OFFLINE_MS = 15000;
  * off one poll instead of each hitting the server-status endpoint on its
  * own timer. */
 function useServerStatus() {
-  const [status, setStatus] = useState<{ online: boolean; players: number | null } | null>(null);
+  const [status, setStatus] = useState<{ online: boolean; players: number | null; ms: number | null } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,15 +114,17 @@ function useServerStatus() {
     }
 
     function poll() {
+      const started = performance.now();
       getServerStatus()
         .then((s) => {
           if (cancelled) return;
-          setStatus(s);
+          // The round trip of this request is the app's real ESI latency, shown on premium decks.
+          setStatus({ ...s, ms: Math.round(performance.now() - started) });
           scheduleNext(s.online);
         })
         .catch(() => {
           if (cancelled) return;
-          setStatus({ online: false, players: null });
+          setStatus({ online: false, players: null, ms: null });
           scheduleNext(false);
         });
     }
@@ -116,6 +141,8 @@ function useServerStatus() {
 
 function ServerStatusBadge() {
   const status = useServerStatus();
+  const [theme] = useTheme();
+  const premium = isPremiumTheme(theme);
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -141,6 +168,11 @@ function ServerStatusBadge() {
       >
         Downtime in {timeUntilDowntime(now)}
       </span>
+      {premium && status?.ms != null && (
+        <span className="server-status-latency" title="Round trip of the last ESI status request">
+          <span className="status-chip-sep">·</span> {status.ms} ms
+        </span>
+      )}
     </div>
   );
 }
@@ -257,7 +289,7 @@ function LocationTracker({ characters }: { characters: SessionCharacter[] }) {
             aria-label="Clear tracked location"
             title="Clear tracked location"
           >
-            <X size={12} strokeWidth={2} />
+            <X size={12} strokeWidth={2} className="icon-danger" />
           </button>
           <div className="location-tracker-radius">
             {RADIUS_OPTIONS.map((option) => (
@@ -366,25 +398,167 @@ const KILL_SYNC_STALE_AFTER_MS = 60_000;
  * RecentKillsFeed does the same thing for its own "Updated Ns ago" text. */
 function KillSyncIndicator() {
   const { lastPolledAt } = useRecentActivity();
-  const [, forceTick] = useState(0);
+  // The shared one-second clock keeps "Ns ago" live (and, under a premium deck,
+  // lets the lamp fade) without a timer of its own.
+  const now = useNow();
+  const [theme] = useTheme();
+  const premium = isPremiumTheme(theme);
+  // Premium decks add a small trace of how many kills New Eden produced in each five
+  // minutes of the last hour, read from the local kill store once a minute.
+  const [rate, setRate] = useState<number[] | null>(null);
   useEffect(() => {
-    const id = setInterval(() => forceTick((t) => t + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
+    if (!premium) return;
+    let cancelled = false;
+    const load = () => {
+      getKillRateBins()
+        .then((bins) => {
+          if (!cancelled) setRate(bins);
+        })
+        .catch(() => undefined);
+    };
+    load();
+    const id = window.setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [premium]);
 
   if (!lastPolledAt) {
     return (
       <div className="server-status-badge topbar-sync-badge" title="Waiting for the first kill-stream poll to resolve">
-        <span className="kills-live-dot topbar-sync-dot-idle" />
+        {premium ? <SignalLamp since={null} staleAfterMs={KILL_SYNC_STALE_AFTER_MS} /> : <span className="kills-live-dot topbar-sync-dot-idle" />}
         <span>Kills syncing...</span>
       </div>
     );
   }
-  const stale = Date.now() - new Date(lastPolledAt).getTime() > KILL_SYNC_STALE_AFTER_MS;
+  const polledAt = new Date(lastPolledAt).getTime();
+  const stale = now - polledAt > KILL_SYNC_STALE_AFTER_MS;
   return (
     <div className="server-status-badge topbar-sync-badge" title="Most recent successful kill-stream poll">
-      <span className={`kills-live-dot${stale ? " topbar-sync-dot-idle" : ""}`} />
+      {premium ? (
+        <SignalLamp since={polledAt} staleAfterMs={KILL_SYNC_STALE_AFTER_MS} />
+      ) : (
+        <span className={`kills-live-dot${stale ? " topbar-sync-dot-idle" : ""}`} />
+      )}
+      {premium && stale && (
+        <span className="topbar-stale-glyph" title="The kill stream has not answered recently" aria-label="Stale">
+          &#9650;
+        </span>
+      )}
       <span>Kills {formatSecondsAgo(lastPolledAt)}</span>
+      {premium && rate && (
+        <span className="topbar-kill-rate" title="Kills across New Eden per five minutes, last hour">
+          <Sparkline values={rate} label="Kills across New Eden per five minutes over the last hour" width={58} height={16} minMax={4} />
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Premium decks: one readout of the app's real ESI traffic. A TX light flashes when a
+ * request went out in the last second, an RX light when an answer came back, and the
+ * count is every ESI request this session. Both lights go red while requests are failing. */
+function NetActivityIndicator() {
+  const [theme] = useTheme();
+  const premium = isPremiumTheme(theme);
+  const net = useNetActivity(premium);
+  if (!premium || !net) return null;
+  const fmt = (n: number) => new Intl.NumberFormat("en-US").format(n);
+  return (
+    <div
+      className="server-status-badge topbar-sync-badge topbar-net-badge"
+      title={`ESI requests this session: ${fmt(net.sent)} sent, ${fmt(net.received)} answered, ${fmt(net.failed)} failed. The lights show activity in the last second.`}
+    >
+      <span className="topbar-net-label">NET</span>
+      <span className="topbar-net-light">
+        <StatusLamp tone={net.failing ? "danger" : "online"} lit={net.txActive} />
+        TX
+      </span>
+      <span className="topbar-net-light">
+        <StatusLamp tone={net.failing ? "danger" : "online"} lit={net.rxActive} />
+        RX
+      </span>
+      <span className="topbar-net-count">{fmt(net.sent)}</span>
+    </div>
+  );
+}
+
+/** A small chip that opens the command line (Ctrl+K), premium decks only. */
+function CommandHint() {
+  const [theme] = useTheme();
+  if (!isPremiumTheme(theme)) return null;
+  function open() {
+    window.dispatchEvent(new CustomEvent(OPEN_COMMAND_PALETTE_EVENT));
+  }
+  return (
+    <div
+      className="server-status-badge topbar-sync-badge topbar-clickable-badge topbar-cmd-hint"
+      title="Open the command line to jump to any page, tab, character or system"
+      role="button"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
+      }}
+    >
+      <span className="status-chip-label">Cmd</span>
+      <span className="status-chip-sep">//</span>
+      <span className="status-chip-value">Ctrl+K</span>
+    </div>
+  );
+}
+
+/** How far back an error still counts toward the SYS lamp. */
+const SYS_FAULT_WINDOW_MS = 10 * 60_000;
+
+/** Premium decks only: one lamp for "has anything gone wrong recently?",
+ * counted from the real error log (every error a user is shown goes through
+ * the error reporter, which records it). Nominal with none in the last ten
+ * minutes, Degraded for one or two, Faulted for three or more. The tooltip
+ * names the latest one. Never decorative: it only leaves Nominal because a
+ * real error was reported. */
+function SystemHealthIndicator() {
+  const [theme] = useTheme();
+  const events = useEventLog();
+  const now = useNow();
+  if (!isPremiumTheme(theme)) return null;
+
+  const recent = events.filter((e) => e.level === "error" && now - e.at < SYS_FAULT_WINDOW_MS);
+  const tone = recent.length === 0 ? "online" : recent.length < 3 ? "warning" : "danger";
+  const label = recent.length === 0 ? "Nominal" : recent.length < 3 ? "Degraded" : "Faulted";
+  const latest = recent[recent.length - 1];
+  const title = latest
+    ? `${recent.length} error${recent.length === 1 ? "" : "s"} in the last 10 minutes. Latest: ${latest.message}`
+    : "No errors reported in the last 10 minutes";
+  function openLog() {
+    window.dispatchEvent(new CustomEvent(OPEN_SYSTEM_LOG_EVENT));
+  }
+  return (
+    <div
+      className="server-status-badge topbar-sync-badge topbar-clickable-badge topbar-sys-badge"
+      title={`${title}. Click to open the system log.`}
+      role="button"
+      tabIndex={0}
+      onClick={openLog}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openLog();
+        }
+      }}
+    >
+      <span className={`status-chip status-chip-${tone}`}>
+        <span className="status-chip-label">Sys</span>
+        <span className="status-chip-sep">//</span>
+        <span className="status-chip-value">
+          <StatusLamp tone={tone} />
+          {label}
+        </span>
+      </span>
     </div>
   );
 }
@@ -485,6 +659,9 @@ function TopBar({ title, activeId, session, onSwitch, onAdd, onLogout, onOpenKil
         <div className="topbar-status-group">
           <LocationTracker characters={session.characters} />
           <KillSyncIndicator />
+          <SystemHealthIndicator />
+          <NetActivityIndicator />
+          <CommandHint />
         </div>
         <div className="topbar-status-group">
           <ServerStatusBadge />

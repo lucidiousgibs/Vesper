@@ -908,6 +908,16 @@ pub async fn get_system_kill_heat(app: AppHandle) -> Result<Vec<kill_history::Sy
 }
 
 #[tauri::command]
+pub fn get_net_stats() -> crate::net_stats::NetStats {
+    crate::net_stats::snapshot()
+}
+
+#[tauri::command]
+pub async fn get_kill_rate_bins(app: AppHandle) -> Result<Vec<i64>, String> {
+    kill_history::get_kill_rate_bins(app).await
+}
+
+#[tauri::command]
 pub async fn get_system_gates(state: State<'_, AppState>, system_id: i64) -> Result<Vec<route::GateSummary>, String> {
     Ok(route::fetch_system_gate_summaries(&state.http_client, system_id).await)
 }

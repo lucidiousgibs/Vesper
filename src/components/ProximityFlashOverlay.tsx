@@ -3,8 +3,15 @@ import { useLocationTracking } from "../hooks/useLocationTracking";
 import { useSoundEnabled } from "../hooks/useSoundEnabled";
 import { useSoundVolume } from "../hooks/useSoundVolume";
 import { playProximityAlert } from "../lib/sound";
+import { useTheme, isPremiumTheme } from "../hooks/useTheme";
 
 const PULSE_DURATION_MS = 1800;
+/** A new flash will not start sooner than this after the last one, so a burst of
+ * nearby kills can never strobe the screen. Three flashes per second is the
+ * accepted ceiling for photosensitivity; this keeps well under it. */
+const MIN_FLASH_INTERVAL_MS = 600;
+/** Under a premium deck a burst plays one alert sound, not one per kill. */
+const MIN_SOUND_INTERVAL_MS = 3_000;
 
 /**
  * A full-viewport flash mounted at the app root, so it's visible no matter
@@ -35,6 +42,10 @@ function ProximityFlashOverlay() {
   // to be sitting there NOW rather than what it was AT the triggering pulse.
   const [activeSeverity, setActiveSeverity] = useState<"system" | "nearby">("nearby");
   const lastSeenRef = useRef(pulseToken);
+  const lastFlashAtRef = useRef(0);
+  const lastSoundAtRef = useRef(0);
+  const [theme] = useTheme();
+  const premium = isPremiumTheme(theme);
   // Same remount-safety concern as pulseToken above: soundToken never resets
   // to 0, so a fresh mount must baseline against whatever value already
   // exists rather than treating any nonzero token as a brand-new alert.
@@ -43,6 +54,9 @@ function ProximityFlashOverlay() {
   useEffect(() => {
     if (pulseToken === lastSeenRef.current) return;
     lastSeenRef.current = pulseToken;
+    const now = Date.now();
+    if (now - lastFlashAtRef.current < MIN_FLASH_INTERVAL_MS) return;
+    lastFlashAtRef.current = now;
     setActiveToken(pulseToken);
     setActiveSeverity(pulseSeverity);
     const timeout = setTimeout(() => setActiveToken(null), PULSE_DURATION_MS);
@@ -52,8 +66,11 @@ function ProximityFlashOverlay() {
   useEffect(() => {
     if (soundToken === lastSoundSeenRef.current) return;
     lastSoundSeenRef.current = soundToken;
+    const now = Date.now();
+    if (premium && now - lastSoundAtRef.current < MIN_SOUND_INTERVAL_MS) return;
+    lastSoundAtRef.current = now;
     if (soundEnabled) playProximityAlert(soundVolume);
-  }, [soundToken, soundEnabled, soundVolume]);
+  }, [soundToken, soundEnabled, soundVolume, premium]);
 
   if (activeToken === null) return null;
 

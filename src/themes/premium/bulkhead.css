@@ -79,5 +79,5 @@
      kill alert (9999) - those three read clearly over this. */
   z-index: 500;
   pointer-events: none;
-  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.4) 100%);
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, calc(0.4 * var(--fx-crt-k, 1))) 100%);
 }

@@ -1,6 +1,6 @@
 import StatusLamp, { type LampTone } from "./StatusLamp";
 
-export type AnnunciatorState = "on" | "off" | "warn" | "attention" | "danger";
+export type AnnunciatorState = "on" | "off" | "warn" | "attention" | "danger" | "calm";
 
 const STATE_TONE: Record<AnnunciatorState, LampTone> = {
   on: "online",
@@ -8,6 +8,7 @@ const STATE_TONE: Record<AnnunciatorState, LampTone> = {
   warn: "warning",
   attention: "attention",
   danger: "danger",
+  calm: "neutral",
 };
 
 interface AnnunciatorProps {
@@ -27,12 +28,25 @@ interface AnnunciatorProps {
  * ("attention") for something worth a look but not urgent, red ("danger")
  * for something that actually needs doing (e.g. reauth) - only red blinks,
  * so the truly urgent tier reads as more alarming than a steady amber.
- * "off"/"warn" stay in the type for now but nothing calls them any more. */
+ * "off"/"warn" stay in the type for now but nothing calls them any more.
+ *
+ * "calm" is the grey-until-abnormal state for a screen where most things are fine most
+ * of the time: a quiet grey lamp with the word OK beside it, so it still reads as
+ * checked and fine rather than dark and unknown, and colour is left for the states
+ * that need attention. A blinking (danger) lamp can be acknowledged with a click. */
 function Annunciator({ label, state }: AnnunciatorProps) {
   return (
     <span className={`annunciator annunciator-${state}`}>
-      <StatusLamp shape="rect" tone={STATE_TONE[state]} lit={state !== "off"} blink={state === "danger"} />
+      <StatusLamp
+        shape="rect"
+        tone={STATE_TONE[state]}
+        lit={state !== "off"}
+        blink={state === "danger"}
+        ackKey={state === "danger" ? `annunciator:${label}` : undefined}
+        className={state === "calm" ? "status-lamp-calm" : undefined}
+      />
       <span className="annunciator-label">{label}</span>
+      {state === "calm" && <span className="annunciator-ok">OK</span>}
     </span>
   );
 }

@@ -427,3 +427,212 @@
   --deck-lamp-off-danger: #301810;
   --deck-lamp-off-neutral: #201c14;
 }
+
+/* PHOSPHOR GREEN - a ship's green-phosphor terminal: black glass, aged
+   phosphor-green readouts, amber reserved for money and caution so the two
+   never compete (the same split the Phosphor Deck standard theme uses, but
+   with green leading instead of amber). Security gradient runs cold cyan
+   (safe) through green and lime into amber, orange and alarm red, with each
+   step's hue spaced evenly between three fixed anchors (1.0 cyan, 0.4
+   amber, 0.1 red) rather than hand-picked, so the scale stays smooth if an
+   anchor ever changes. Geometry is the squarest of the five decks - see
+   phosphor-green.css. */
+:root[data-theme="phosphor-green"] {
+  color-scheme: dark;
+  --bg: #060c08;
+  --bg-elevated: #0b140e;
+  --bg-elevated-2: #111d15;
+  --border: #1f3a29;
+  --border-active: rgba(94, 230, 140, 0.5);
+
+  --text: #c9ecd3;
+  --text-secondary: #97bfa4;
+  --text-muted: #6c9279;
+
+  --accent: #5ee68c;
+  --accent-soft: rgba(94, 230, 140, 0.14);
+  --accent-contrast: #03100a;
+  --metal: #5f7d69;
+  --success: #a3e65f;
+  --success-soft: rgba(163, 230, 95, 0.16);
+  --warning: #e6b53c;
+  --warning-soft: rgba(230, 181, 60, 0.16);
+  --danger: #ff5d52;
+  --danger-soft: rgba(255, 93, 82, 0.16);
+  /* The base neon violet is the one cold colour that clashes with a green
+     deck's warm-leaning phosphor, so wormhole gets a dusty violet and abyssal
+     a burnt amber-orange: both stay clearly distinct from accent, warning
+     and danger. */
+  --wormhole: #b08ae6;
+  --wormhole-glow: rgba(176, 138, 230, 0.4);
+  --abyssal: #e0883c;
+  --abyssal-glow: rgba(224, 136, 60, 0.4);
+
+  --kill-corp: #62b8c4;
+  --kill-alliance: #a98ae0;
+  --kill-ship: #5ee68c;
+
+  --isk: #e6b53c;
+  --isk-soft: rgba(230, 181, 60, 0.16);
+
+  --standing-positive: #62b8e0;
+  --standing-positive-soft: rgba(98, 184, 224, 0.12);
+  --standing-negative: #ff6b60;
+  --standing-negative-soft: rgba(255, 107, 96, 0.12);
+  --standing-neutral: #6c9279;
+
+  --constellation: #a98ae0;
+  --constellation-soft: rgba(169, 138, 224, 0.16);
+  --region: #62b8c4;
+  --region-soft: rgba(98, 184, 196, 0.16);
+  --gate: #a3e65f;
+  --gate-soft: rgba(163, 230, 95, 0.16);
+
+  --sec-10: #3eb4cc;
+  --sec-9: #3dd0ac;
+  --sec-8: #3cd470;
+  --sec-7: #46d83b;
+  --sec-6: #88dc3a;
+  --sec-5: #cee03a;
+  --sec-4: #e4b13a;
+  --sec-3: #ef9642;
+  --sec-2: #f87b4b;
+  --sec-1: #ff6257;
+  --sec-min: #c9457a;
+  --sec-legend-on-light: #03100a;
+  --sec-legend-on-dark: #c9ecd3;
+
+  --slot-low: #d9d08a;
+  --slot-low-soft: rgba(217, 208, 138, 0.12);
+  --slot-mid: #8fd0c8;
+  --slot-mid-soft: rgba(143, 208, 200, 0.12);
+  --slot-high: #e0929a;
+  --slot-high-soft: rgba(224, 146, 154, 0.12);
+
+  --grid-line: rgba(94, 230, 140, 0.04);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-pill: 0px;
+  --font-display: "Oxanium", sans-serif;
+  --font-label: "Share Tech Mono", monospace;
+  --glow-accent: 0 0 0 1px var(--border-active), 0 0 20px rgba(94, 230, 140, 0.28);
+
+  /* Construction layers - near-black green plate and frame, a tight 6px
+     notch (the squarest of the five decks), and amber for the hazard tone so
+     warning marks stay distinct from the green accent. */
+  --deck-plate: #0a120c;
+  --deck-frame: #1f3a29;
+  --deck-bezel: #2c5239;
+  --deck-cavity: #040806;
+  --deck-rivet: #3a5c46;
+  --deck-hazard: #e6b53c;
+  --deck-hazard-dark: #060c08;
+  --deck-bevel-dark: rgba(0, 0, 0, 0.7);
+  --deck-bevel-light: rgba(94, 230, 140, 0.07);
+  --deck-notch: 6px;
+  --deck-lamp-off-online: #123022;
+  --deck-lamp-off-warning: #302710;
+  --deck-lamp-off-danger: #301514;
+  --deck-lamp-off-neutral: #0f2218;
+}
+
+/* HOLOGRAPHIC - black glass and light: no hardware plates, thin emissive
+   edges, a cyan accent with a white-blue text and a violet secondary. The
+   cyan-led counterpart to Cold Ballast, but clean instead of raster-and-tube.
+   Security gradient runs sky blue (safe) through teal, green and yellow to
+   amber, orange and coral red, each step's hue spaced evenly between three
+   fixed anchors (1.0 blue, 0.4 amber, 0.1 coral) rather than hand-picked.
+   Geometry is in holographic.css. */
+:root[data-theme="holographic"] {
+  color-scheme: dark;
+  --bg: #03080d;
+  --bg-elevated: #07131c;
+  --bg-elevated-2: #0c1d2a;
+  --border: #14485c;
+  --border-active: rgba(61, 225, 255, 0.55);
+
+  --text: #e2f7ff;
+  --text-secondary: #a9cfe0;
+  --text-muted: #7ba5ba;
+
+  --accent: #3de1ff;
+  --accent-soft: rgba(61, 225, 255, 0.12);
+  --accent-contrast: #021014;
+  --metal: #5f8ea3;
+  --success: #5df2c1;
+  --success-soft: rgba(93, 242, 193, 0.14);
+  --warning: #ffc857;
+  --warning-soft: rgba(255, 200, 87, 0.14);
+  --danger: #ff6479;
+  --danger-soft: rgba(255, 100, 121, 0.14);
+  --wormhole: #b79aff;
+  --wormhole-glow: rgba(183, 154, 255, 0.4);
+  --abyssal: #ff9a4d;
+  --abyssal-glow: rgba(255, 154, 77, 0.4);
+
+  --kill-corp: #6fb4ff;
+  --kill-alliance: #a98bff;
+  --kill-ship: #3de1ff;
+
+  --isk: #ffc857;
+  --isk-soft: rgba(255, 200, 87, 0.14);
+
+  --standing-positive: #6fb4ff;
+  --standing-positive-soft: rgba(111, 180, 255, 0.12);
+  --standing-negative: #ff7a8c;
+  --standing-negative-soft: rgba(255, 122, 140, 0.12);
+  --standing-neutral: #7ba5ba;
+
+  --constellation: #a98bff;
+  --constellation-soft: rgba(169, 139, 255, 0.14);
+  --region: #6fb4ff;
+  --region-soft: rgba(111, 180, 255, 0.14);
+  --gate: #5df2c1;
+  --gate-soft: rgba(93, 242, 193, 0.14);
+
+  --sec-10: #4cacf0;
+  --sec-9: #4bf2ec;
+  --sec-8: #49f3a0;
+  --sec-7: #48f452;
+  --sec-6: #8cf547;
+  --sec-5: #dbf646;
+  --sec-4: #f7c245;
+  --sec-3: #fa9850;
+  --sec-2: #fd725b;
+  --sec-1: #ff667a;
+  --sec-min: #d95fa0;
+  --sec-legend-on-light: #021014;
+  --sec-legend-on-dark: #e2f7ff;
+
+  --slot-low: #e6d99a;
+  --slot-low-soft: rgba(230, 217, 154, 0.12);
+  --slot-mid: #8fd9f0;
+  --slot-mid-soft: rgba(143, 217, 240, 0.12);
+  --slot-high: #f0a0b4;
+  --slot-high-soft: rgba(240, 160, 180, 0.12);
+
+  --grid-line: rgba(61, 225, 255, 0.045);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-pill: 0px;
+  --font-display: "Oxanium", sans-serif;
+  --font-label: "Rajdhani", sans-serif;
+  --glow-accent: 0 0 0 1px var(--border-active), 0 0 22px rgba(61, 225, 255, 0.3);
+
+  /* Construction layers - "plates" here are only faint tinted glass: no bevel,
+     no rivets, thin cyan edges. */
+  --deck-plate: #07131c;
+  --deck-frame: #14485c;
+  --deck-bezel: #1f6f8a;
+  --deck-cavity: #02060a;
+  --deck-rivet: #1f6f8a;
+  --deck-hazard: #ffc857;
+  --deck-hazard-dark: #03080d;
+  --deck-bevel-dark: rgba(0, 0, 0, 0);
+  --deck-bevel-light: rgba(61, 225, 255, 0.1);
+  --deck-notch: 12px;
+  --deck-lamp-off-online: #0e2a2c;
+  --deck-lamp-off-warning: #2d2610;
+  --deck-lamp-off-danger: #2e1320;
+  --deck-lamp-off-neutral: #0d2230;
+}

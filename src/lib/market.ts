@@ -29,6 +29,9 @@ export interface ShipStats {
   low_slots: number;
   rig_slots: number;
   subsystem_slots: number;
+  /** Weapon hardpoints the hull offers; a hull can have more high slots than hardpoints. */
+  turret_hardpoints: number;
+  launcher_hardpoints: number;
   power_output: number;
   cpu_output: number;
   calibration: number;
@@ -63,6 +66,8 @@ export interface ItemResourceCost {
   calibration: number;
   drone_bandwidth: number;
   volume: number;
+  /** "turret" or "launcher" for a module that uses a weapon hardpoint, null otherwise. */
+  hardpoint: "turret" | "launcher" | null;
 }
 
 /** Bulk PG/CPU/calibration-cost/volume lookup for a whole fit's worth of

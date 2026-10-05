@@ -21,6 +21,15 @@ function categoryTone(category: string): "danger" | "success" | "warning" | "neu
   return "neutral";
 }
 
+/** The same three signal tiers the kill feeds use: a loss or the start of an attack is
+ * tier 1, a gain or a contested system is tier 2, and neutral admin noise is tier 3. */
+function activityTier(category: string): 1 | 2 | 3 {
+  const tone = categoryTone(category);
+  if (tone === "danger") return 1;
+  if (tone === "neutral") return 3;
+  return 2;
+}
+
 /** Dashboard's second ticker panel - DOTLAN's live universe activity feed,
  * genuinely real-time (unlike the news feed above, which only changes a
  * few times a week), so this one polls in the background while the
@@ -74,7 +83,7 @@ function LiveActivityTicker() {
               <button
                 key={event.link}
                 type="button"
-                className="news-ticker-card news-ticker-card-wide"
+                className={`news-ticker-card news-ticker-card-wide ticker-tier-${activityTier(event.category)}`}
                 onClick={() => openTicker(event.link)}
                 title={event.title}
               >

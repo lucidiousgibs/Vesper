@@ -361,7 +361,7 @@ function TrackedSystemsFeed({
                     }}
                     aria-label={`Stop tracking ${entry.name}`}
                   >
-                    <X size={11} strokeWidth={2.5} />
+                    <X size={11} strokeWidth={2.5} className="icon-danger" />
                   </button>
                 </span>
               );

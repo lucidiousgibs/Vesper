@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -240,6 +240,28 @@ function Sidebar({ activeId, activeSubTab, onSelect }: SidebarProps) {
   const draggableItems = orderedItems.filter((item) => item.id !== "settings");
   const settingsItem = orderedItems.find((item) => item.id === "settings");
 
+  // Premium decks: the channel numbers down the nav are real shortcuts. Alt+1 to Alt+9
+  // and Alt+0 (the tenth) open the page in that position, wherever the pilot has dragged
+  // it. Ignored while typing in a field, and on the Favourites view, whose rows are a
+  // different list.
+  const shortcutRef = useRef<{ ids: string[]; onSelect: (id: string) => void }>({ ids: [], onSelect });
+  shortcutRef.current = { ids: draggableItems.map((item) => item.id), onSelect };
+  useEffect(() => {
+    if (!premium || showingFavourites) return;
+    function onKey(e: KeyboardEvent) {
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !/^[0-9]$/.test(e.key)) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable)) return;
+      const slot = e.key === "0" ? 10 : Number(e.key);
+      const id = shortcutRef.current.ids[slot - 1];
+      if (!id) return;
+      e.preventDefault();
+      shortcutRef.current.onSelect(id);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [premium, showingFavourites]);
+
   interface FavouriteRow {
     id: string;
     pageId: string;
@@ -377,7 +399,7 @@ function Sidebar({ activeId, activeSubTab, onSelect }: SidebarProps) {
                       standard themes keep the exact nav item markup they
                       always had. */}
                   {premium && (
-                    <span className="nav-item-channel">
+                    <span className="nav-item-channel" title={index < 10 ? `Shortcut: Alt+${(index + 1) % 10}` : undefined}>
                       {String(index + 1).padStart(2, "0")}
                       <span className="nav-item-channel-code">{NAV_CHANNEL_CODE[item.id] ?? "GEN"}</span>
                     </span>

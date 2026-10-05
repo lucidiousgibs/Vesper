@@ -1,4 +1,5 @@
-import { Plus, Scale, ShieldAlert, GraduationCap } from "lucide-react";
+import type { ReactNode } from "react";
+import { Plus, Scale, ShieldAlert, GraduationCap, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import CharacterCard from "../CharacterCard";
 import NewsTicker from "../NewsTicker";
 import LiveActivityTicker from "../LiveActivityTicker";
@@ -7,8 +8,32 @@ import MechanicalButton from "./MechanicalButton";
 import TelemetryRail from "./TelemetryRail";
 import ScreenHousing from "./ScreenHousing";
 import TechnicalLabel from "./TechnicalLabel";
+import RollingNumber from "./RollingNumber";
 import { formatIsk, formatSp } from "../../lib/format";
 import type { CharacterOverview, SessionCharacter } from "../../lib/eve";
+import { usePersistentState } from "../../hooks/usePersistentState";
+
+/** The dashboard's modules sit in two racks (a row of three, a row of two) that the pilot can
+ * rearrange with the arrows in each module's title bar. The order is saved, and Reset
+ * layout puts it back. A module can only move within its own rack, and a saved order that
+ * no longer matches (a module added or removed in a later version) falls back to the default. */
+interface RackLayout {
+  zones: string[];
+  monitors: string[];
+}
+
+const DEFAULT_RACK: RackLayout = { zones: ["sysstate", "primary", "alerts"], monitors: ["comms", "activity"] };
+
+function sameMembers(a: unknown, b: string[]): a is string[] {
+  return Array.isArray(a) && a.length === b.length && b.every((id) => a.includes(id));
+}
+
+function sanitizeRack(raw: Partial<RackLayout>): RackLayout {
+  return {
+    zones: sameMembers(raw?.zones, DEFAULT_RACK.zones) ? raw.zones : DEFAULT_RACK.zones,
+    monitors: sameMembers(raw?.monitors, DEFAULT_RACK.monitors) ? raw.monitors : DEFAULT_RACK.monitors,
+  };
+}
 
 interface PremiumDashboardProps {
   characters: SessionCharacter[];
@@ -45,6 +70,36 @@ function PremiumDashboard({
   onCancel,
   onCompare,
 }: PremiumDashboardProps) {
+  const [rack, setRack] = usePersistentState<RackLayout>("vesper.dashboard.rack", DEFAULT_RACK, sanitizeRack);
+  const customised = rack.zones.join() !== DEFAULT_RACK.zones.join() || rack.monitors.join() !== DEFAULT_RACK.monitors.join();
+
+  /** Moves a module one place earlier (-1) or later (+1) within its own rack. */
+  function move(group: keyof RackLayout, id: string, direction: -1 | 1) {
+    setRack((prev) => {
+      const list = [...prev[group]];
+      const from = list.indexOf(id);
+      const to = from + direction;
+      if (from < 0 || to < 0 || to >= list.length) return prev;
+      [list[from], list[to]] = [list[to], list[from]];
+      return { ...prev, [group]: list };
+    });
+  }
+
+  /** The arrows for one module's title bar; an end of the rack has no arrow past it. */
+  function rackControls(group: keyof RackLayout, id: string, title: string) {
+    const index = rack[group].indexOf(id);
+    return (
+      <>
+        <button type="button" className="rack-move" disabled={index <= 0} onClick={() => move(group, id, -1)} aria-label={`Move ${title} earlier`} title="Move earlier">
+          <ChevronLeft size={12} strokeWidth={2} />
+        </button>
+        <button type="button" className="rack-move" disabled={index < 0 || index >= rack[group].length - 1} onClick={() => move(group, id, 1)} aria-label={`Move ${title} later`} title="Move later">
+          <ChevronRight size={12} strokeWidth={2} />
+        </button>
+      </>
+    );
+  }
+
   const loadedOverviews = characters.map((c) => overviews[c.id]).filter((o): o is CharacterOverview => o != null);
   // undefined = "fetch hasn't resolved yet" (see Dashboard.tsx's
   // Record<id, CharacterOverview | null> - null specifically means "fetch
@@ -77,53 +132,20 @@ function PremiumDashboard({
   const anyIskKnown = loadedOverviews.some((o) => o.isk_balance != null);
   const anySpKnown = loadedOverviews.some((o) => o.total_sp != null);
 
-  return (
-    <div className="premium-dashboard">
-      <div className="premium-dashboard-header">
-        <div>
-          <TechnicalLabel>SYS.CMD / DECK 01</TechnicalLabel>
-          <h2>Command Status // Capsuleer Operations</h2>
-          <p className="premium-dashboard-subtitle">Welcome back, {activeCharacterName}</p>
-        </div>
-        <div className="premium-dashboard-header-actions">
-          {characters.length > 1 && (
-            <MechanicalButton onClick={onCompare}>
-              <Scale size={13} strokeWidth={2} /> Compare Skills
-            </MechanicalButton>
-          )}
-          {pending && (
-            <div className="dashboard-pending">
-              <span>Waiting for you to finish signing in...</span>
-              <button type="button" className="dashboard-pending-cancel" onClick={onCancel}>
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <TelemetryRail
-        items={[
-          { label: "Pilots", value: String(characters.length) },
-          { label: "Total ISK", value: anyIskKnown ? formatIsk(totalIsk) : "—" },
-          { label: "Total SP", value: anySpKnown ? formatSp(totalSp) : "—" },
-          { label: "Training", value: `${trainingCount}/${characters.length}` },
-          { label: "Reauth Needed", value: String(reauthCount) },
-        ]}
-      />
-
-      <div className="premium-dashboard-zones">
-        <ScreenHousing title="Sys State" className="premium-dashboard-sysstate">
+  const zoneNodes: Record<string, ReactNode> = {
+    sysstate: (
+      <ScreenHousing key="sysstate" title="Sys State" className="premium-dashboard-sysstate" actions={rackControls("zones", "sysstate", "Sys State")}>
           {/* Amber ("attention") rather than dark while the first overview
              fetch is still in flight - a dark lamp here read as "is this
              thing even working?" exactly like the Alert Bank's old off
              state did, before every real lamp in this file went always-lit. */}
-          <Annunciator label="ESI LINK" state={anyResolved ? "on" : "attention"} />
-          <Annunciator label="SYNC" state={anyResolved ? "on" : "attention"} />
-          <Annunciator label="CACHE" state="on" />
+          <Annunciator label="ESI LINK" state={anyResolved ? "calm" : "attention"} />
+          <Annunciator label="SYNC" state={anyResolved ? "calm" : "attention"} />
+          <Annunciator label="CACHE" state="calm" />
         </ScreenHousing>
-
-        <ScreenHousing title="Capsuleer Status" className="premium-dashboard-primary">
+    ),
+    primary: (
+      <ScreenHousing key="primary" title="Capsuleer Status" className="premium-dashboard-primary" actions={rackControls("zones", "primary", "Capsuleer Status")}>
           <div className="character-grid">
             {characters.map((character) => (
               <CharacterCard
@@ -143,19 +165,21 @@ function PremiumDashboard({
             </button>
           </div>
         </ScreenHousing>
-
-        <ScreenHousing title="Alert Bank" className="premium-dashboard-alerts">
-          {/* Always lit now - green means "checked, all clear", not "nothing
-             to report". Amber (attention) for something worth a look but not
-             urgent, red (danger) for something that actually needs doing.
+    ),
+    alerts: (
+      <ScreenHousing key="alerts" title="Alert Bank" className="premium-dashboard-alerts" actions={rackControls("zones", "alerts", "Alert Bank")}>
+          {/* Grey until abnormal: a quiet grey lamp with the word OK means "checked,
+             all clear" (never dark, which read as unknown), amber (attention) is
+             something worth a look but not urgent, red (danger) is something that
+             actually needs doing and can be acknowledged to stop its blink.
              REAUTH/TRAINING specifically stay amber ("checking...") until at
              least one overview has actually resolved - otherwise an account
              with nothing loaded yet showed a false green "no reauth needed"
              and a false amber "nobody training", neither of which had been
              checked. */}
-          <Annunciator label="SIGN-IN" state={pending ? "attention" : "on"} />
-          <Annunciator label="REAUTH" state={!anyResolved ? "attention" : reauthCount > 0 ? "danger" : "on"} />
-          <Annunciator label="TRAINING" state={!anyResolved ? "attention" : trainingCount > 0 ? "on" : "attention"} />
+          <Annunciator label="SIGN-IN" state={pending ? "attention" : "calm"} />
+          <Annunciator label="REAUTH" state={!anyResolved ? "attention" : reauthCount > 0 ? "danger" : "calm"} />
+          <Annunciator label="TRAINING" state={!anyResolved ? "attention" : trainingCount > 0 ? "calm" : "attention"} />
           {/* No separate "all clear" fallback card - every loaded character
              lands in exactly one of Training active / Not training below
              (training_skill_name is either set or it isn't), so those two
@@ -204,15 +228,67 @@ function PremiumDashboard({
             )}
           </div>
         </ScreenHousing>
+    ),
+  };
+  const monitorNodes: Record<string, ReactNode> = {
+    comms: (
+      <ScreenHousing key="comms" title="Comms Feed" className="premium-dashboard-monitor" actions={rackControls("monitors", "comms", "Comms Feed")}>
+          <NewsTicker />
+        </ScreenHousing>
+    ),
+    activity: (
+      <ScreenHousing key="activity" title="Activity Scope" className="premium-dashboard-monitor" actions={rackControls("monitors", "activity", "Activity Scope")}>
+          <LiveActivityTicker />
+        </ScreenHousing>
+    ),
+  };
+
+  return (
+    <div className="premium-dashboard">
+      <div className="premium-dashboard-header">
+        <div>
+          <TechnicalLabel>SYS.CMD / DECK 01</TechnicalLabel>
+          <h2>Command Status // Capsuleer Operations</h2>
+          <p className="premium-dashboard-subtitle">Welcome back, {activeCharacterName}</p>
+        </div>
+        <div className="premium-dashboard-header-actions">
+          {customised && (
+            <MechanicalButton onClick={() => setRack(DEFAULT_RACK)}>
+              <RotateCcw size={13} strokeWidth={2} /> Reset layout
+            </MechanicalButton>
+          )}
+          {characters.length > 1 && (
+            <MechanicalButton onClick={onCompare}>
+              <Scale size={13} strokeWidth={2} /> Compare Skills
+            </MechanicalButton>
+          )}
+          {pending && (
+            <div className="dashboard-pending">
+              <span>Waiting for you to finish signing in...</span>
+              <button type="button" className="dashboard-pending-cancel" onClick={onCancel}>
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <TelemetryRail
+        items={[
+          { label: "Pilots", value: String(characters.length) },
+          { label: "Total ISK", value: anyIskKnown ? <RollingNumber id="fleet-isk" value={totalIsk} format={formatIsk} /> : "—" },
+          { label: "Total SP", value: anySpKnown ? <RollingNumber id="fleet-sp" value={totalSp} format={formatSp} /> : "—" },
+          { label: "Training", value: `${trainingCount}/${characters.length}` },
+          { label: "Reauth Needed", value: String(reauthCount) },
+        ]}
+      />
+
+      <div className="premium-dashboard-zones">
+        {rack.zones.map((id) => zoneNodes[id])}
       </div>
 
       <div className="premium-dashboard-monitors">
-        <ScreenHousing title="Comms Feed" className="premium-dashboard-monitor">
-          <NewsTicker />
-        </ScreenHousing>
-        <ScreenHousing title="Activity Scope" className="premium-dashboard-monitor">
-          <LiveActivityTicker />
-        </ScreenHousing>
+        {rack.monitors.map((id) => monitorNodes[id])}
       </div>
     </div>
   );

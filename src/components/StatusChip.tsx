@@ -23,7 +23,15 @@ function StatusChip({ label, value, tone = "neutral" }: StatusChipProps) {
       <span className="status-chip-sep">//</span>
       <span className="status-chip-value">
         {premium ? (
-          <StatusLamp tone={tone} lit={tone !== "neutral"} blink={tone === "warning" || tone === "danger"} />
+          <>
+            <StatusLamp tone={tone} lit={tone !== "neutral"} blink={tone === "warning" || tone === "danger"} ackKey={`chip:${label}`} />
+            {/* A second channel beside the colour: a triangle for caution, a square for danger. */}
+            {(tone === "warning" || tone === "danger") && (
+              <span className="status-chip-shape" aria-hidden="true">
+                {tone === "warning" ? "\u25B2" : "\u25A0"}
+              </span>
+            )}
+          </>
         ) : (
           <span className="status-chip-dot" />
         )}

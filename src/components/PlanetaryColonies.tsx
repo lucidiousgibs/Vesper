@@ -13,6 +13,8 @@ import { typeIconUrl } from "../lib/format";
 import { useSortableRows, useTextFilter, useSelectFilter } from "../hooks/useSortableRows";
 import { SortableTh } from "./SortableTh";
 import TableFilterBar from "./TableFilterBar";
+import TimerBar from "./premium/TimerBar";
+import PiBoard from "./premium/PiBoard";
 
 type ColonyStatus = "active" | "idle" | "no_extractors";
 
@@ -225,6 +227,8 @@ function PlanetaryColonies({ characters }: PlanetaryColoniesProps) {
               </div>
             </div>
 
+            <PiBoard colonies={sorted.rows} />
+
             <TableFilterBar
               searchQuery={colonyText.query}
               onSearchChange={colonyText.setQuery}
@@ -324,6 +328,9 @@ function PlanetaryColonies({ characters }: PlanetaryColoniesProps) {
                                           ? `Idle for ${formatTimeElapsedFull(pin.expiry_time)}`
                                           : `Cycle ends ${formatEveDateTime(pin.expiry_time)} (${formatTimeRemainingFull(pin.expiry_time)} left)`}
                                       </p>
+                                    )}
+                                    {pin.is_extractor && pin.install_time && pin.expiry_time && new Date(pin.expiry_time).getTime() > Date.now() && (
+                                      <TimerBar start={pin.install_time} end={pin.expiry_time} label="Extraction program progress" />
                                     )}
                                     {pin.contents.length > 0 && (
                                       <p className="pi-colony-pin-detail">

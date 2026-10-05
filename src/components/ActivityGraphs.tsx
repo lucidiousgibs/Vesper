@@ -195,7 +195,7 @@ function Sparkline({ label, values, bucketStarts, color, glowColor }: SparklineP
             opacity={hoverIdx == null || hoverIdx === i ? 1 : 0.55}
           />
         ))}
-        <path d={linePath} fill="none" stroke={color} strokeWidth={2} vectorEffect="non-scaling-stroke" filter={`url(#glow-${instanceId})`} />
+        <path d={linePath} fill="none" stroke={color} strokeWidth={2} vectorEffect="non-scaling-stroke" filter={`url(#glow-${instanceId})`} className="chart-trace" pathLength={1} />
 
         {/* Permanent peak marker - visible even without hovering, the "here's the interesting bit" callout. */}
         {peakIdx != null && hoverIdx !== peakIdx && (

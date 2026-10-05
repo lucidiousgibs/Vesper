@@ -1,0 +1,148 @@
+/* ============================================================================
+   GLASS FAMILY - shared geometry for decks with no hardware
+   ============================================================================
+   Decks that opt in with family "glass" in useTheme.ts (useTheme stamps it as
+   data-family on <html>): Cybernetic, Deep Space, Cyberpunk Neon, Corporate
+   Future and Alien Biotech. Like Holographic (which keeps its own file), they
+   flatten the shared premium hardware into thin lit edges on tinted glass, and
+   differ from one another through variables instead of copies of these rules:
+
+     --glass-edge         how much accent is mixed into the edge colour (default 38%)
+     --glass-edge-w       edge thickness (default 1px)
+     --glass-radius       panel corner radius (default 0)
+     --glass-button-radius  button/chip corner radius (default: the panel radius)
+     --glass-shadow       drop shadow under panels (default none)
+     --glass-rule         how strong the line under a page header is (default 100%)
+     --glass-rule-glow    reach of the glow under a page header (default 10px)
+
+   Same specificity as the shared premium rules and loaded after them, so these
+   win the tie. Glow follows the Glow and CRT settings through --fx-glow-k.
+   ============================================================================ */
+
+/* ---- Buttons: flat glass instead of a raised keycap ---- */
+:root[data-family="glass"] button:not(.nav-item):not(.mechanical-button) {
+  transition: background 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out, color 120ms ease-out;
+}
+
+:root[data-family="glass"] button:not(.nav-item):not(.mechanical-button):not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 6%, var(--deck-plate));
+  border: var(--glass-edge-w, 1px) solid color-mix(in srgb, var(--accent) var(--glass-edge, 38%), var(--deck-frame));
+  border-radius: var(--glass-button-radius, var(--glass-radius, 0px));
+  box-shadow: none;
+}
+
+:root[data-family="glass"] button:not(.nav-item):not(.mechanical-button):not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--deck-plate));
+  border-color: var(--accent);
+  box-shadow: 0 0 calc(12px * var(--fx-glow-k, 1)) var(--accent-soft);
+}
+
+:root[data-family="glass"] button:not(.nav-item):not(.mechanical-button):not(:disabled):active {
+  background: color-mix(in srgb, var(--accent) 22%, var(--deck-plate));
+  box-shadow: none;
+  transform: none;
+}
+
+/* A latched or selected control is simply lit: accent edge, accent wash, glow. */
+:root[data-family="glass"] .kills-tab-active,
+:root[data-family="glass"] .character-tab-active,
+:root[data-family="glass"] .location-tracker-radius-active,
+:root[data-family="glass"] .mail-label-chip-active,
+:root[data-family="glass"] .kills-watched-chip-active,
+:root[data-family="glass"] .kill-report-chip-active,
+:root[data-family="glass"] .entity-stats-window-active,
+:root[data-family="glass"] .kills-pager-active {
+  background: color-mix(in srgb, var(--accent) 18%, var(--deck-plate));
+  border-color: var(--accent);
+  box-shadow: 0 0 calc(12px * var(--fx-glow-k, 1)) var(--accent-soft), inset 0 0 12px var(--accent-soft);
+}
+
+:root[data-family="glass"] button:disabled {
+  filter: grayscale(0.5) brightness(0.7);
+}
+
+/* ---- Wells and fields: no inner shadow, a thin lit edge on focus ---- */
+:root[data-family="glass"] input[type="text"],
+:root[data-family="glass"] input[type="number"],
+:root[data-family="glass"] select {
+  background: color-mix(in srgb, var(--deck-cavity) 70%, transparent);
+  border-radius: var(--glass-button-radius, var(--glass-radius, 0px));
+  box-shadow: none;
+}
+
+:root[data-family="glass"] input[type="text"]:focus,
+:root[data-family="glass"] input[type="number"]:focus,
+:root[data-family="glass"] select:focus {
+  box-shadow: 0 0 calc(10px * var(--fx-glow-k, 1)) var(--accent-soft);
+}
+
+/* ---- Instrument chips in the topbar: transparent glass with a hairline ---- */
+:root[data-family="glass"] .location-tracker-current,
+:root[data-family="glass"] .location-tracker-search,
+:root[data-family="glass"] .server-status-badge,
+:root[data-family="glass"] .capsuleers-online-badge,
+:root[data-family="glass"] .account-trigger,
+:root[data-family="glass"] .eve-time-clock,
+:root[data-family="glass"] .notification-bell-trigger {
+  background: color-mix(in srgb, var(--deck-cavity) 55%, transparent);
+  border: var(--glass-edge-w, 1px) solid color-mix(in srgb, var(--accent) calc(var(--glass-edge, 38%) * 0.75), var(--deck-frame));
+  border-radius: var(--glass-button-radius, var(--glass-radius, 0px));
+  box-shadow: none;
+}
+
+:root[data-family="glass"] .topbar {
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) calc(var(--glass-edge, 38%) * 0.9), var(--deck-frame));
+  box-shadow: 0 1px 0 var(--accent-soft);
+}
+
+/* ---- Housings, annunciators and toasts: thin edges, no frame weight ---- */
+:root[data-family="glass"] .screen-housing {
+  border: var(--glass-edge-w, 1px) solid color-mix(in srgb, var(--accent) calc(var(--glass-edge, 38%) * 0.8), var(--deck-frame));
+  border-radius: var(--glass-radius, 0px);
+  box-shadow: var(--glass-shadow, none);
+}
+
+:root[data-family="glass"] .screen-housing-title,
+:root[data-family="glass"] .screen-housing-display {
+  background: color-mix(in srgb, var(--deck-cavity) 75%, transparent);
+}
+
+:root[data-family="glass"] .annunciator {
+  background: color-mix(in srgb, var(--deck-cavity) 60%, transparent);
+  border-color: color-mix(in srgb, var(--accent) calc(var(--glass-edge, 38%) * 0.65), var(--deck-frame));
+  border-radius: var(--glass-button-radius, var(--glass-radius, 0px));
+}
+
+/* ---- Page headers: one lit line underneath ---- */
+:root[data-family="glass"] .dashboard-header,
+:root[data-family="glass"] .entity-stats-header,
+:root[data-family="glass"] .detail-panel-header,
+:root[data-family="glass"] .industry-build-steps-header,
+:root[data-family="glass"] .kills-header,
+:root[data-family="glass"] .wallet-market-header,
+:root[data-family="glass"] .pi-header,
+:root[data-family="glass"] .wh-page-header,
+:root[data-family="glass"] .fittings-page-header,
+:root[data-family="glass"] .calendar-page-header,
+:root[data-family="glass"] .mail-page-header,
+:root[data-family="glass"] .settings-header,
+:root[data-family="glass"] .map-page-header {
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) var(--glass-rule, 100%), transparent);
+  box-shadow: 0 1px calc(var(--glass-rule-glow, 10px) * var(--fx-glow-k, 1)) -4px var(--accent);
+}
+
+:root[data-family="glass"] .market-stat-card {
+  border-top: 1px solid var(--accent);
+  border-radius: var(--glass-radius, 0px);
+  box-shadow: none;
+}
+
+:root[data-family="glass"] .brand-divider {
+  height: 1px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+}
+
+:root[data-family="glass"] .sidebar {
+  border-right: 1px solid color-mix(in srgb, var(--accent) calc(var(--glass-edge, 38%) * 0.8), var(--deck-frame));
+  box-shadow: none;
+}

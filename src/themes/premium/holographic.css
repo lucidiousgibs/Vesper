@@ -1,0 +1,151 @@
+/* ============================================================================
+   HOLOGRAPHIC - deck-specific geometry
+   ============================================================================
+   Signature: black glass and light. Where the other decks build hardware
+   (keycap buttons, bevelled plates, recessed dials), this one flattens all of
+   it into thin emissive edges: glass buttons that light on hover, wells with
+   no inner shadow, a single cyan hairline under each page header, and a faint
+   glow falling from the top of the screen instead of a raster or a vignette.
+   It reuses every shared premium rule and only overrides the physical ones, so
+   layout is identical to the other decks. The glow follows the Glow and CRT
+   settings; no scan raster, no grain by default.
+   ============================================================================ */
+
+/* ---- Buttons: flat glass instead of a raised keycap. Same specificity as the
+   shared button rules and loaded after them, so these win the tie. ---- */
+:root[data-theme="holographic"] button:not(.nav-item):not(.mechanical-button) {
+  transition: background 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out, color 120ms ease-out;
+}
+
+:root[data-theme="holographic"] button:not(.nav-item):not(.mechanical-button):not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 6%, var(--deck-plate));
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--deck-frame));
+  box-shadow: none;
+}
+
+:root[data-theme="holographic"] button:not(.nav-item):not(.mechanical-button):not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--deck-plate));
+  border-color: var(--accent);
+  box-shadow: 0 0 calc(12px * var(--fx-glow-k, 1)) var(--accent-soft);
+}
+
+:root[data-theme="holographic"] button:not(.nav-item):not(.mechanical-button):not(:disabled):active {
+  background: color-mix(in srgb, var(--accent) 22%, var(--deck-plate));
+  box-shadow: none;
+  transform: none;
+}
+
+/* A latched or selected control is simply lit: accent edge, accent wash, glow. */
+:root[data-theme="holographic"] .kills-tab-active,
+:root[data-theme="holographic"] .character-tab-active,
+:root[data-theme="holographic"] .location-tracker-radius-active,
+:root[data-theme="holographic"] .mail-label-chip-active,
+:root[data-theme="holographic"] .kills-watched-chip-active,
+:root[data-theme="holographic"] .kill-report-chip-active,
+:root[data-theme="holographic"] .entity-stats-window-active,
+:root[data-theme="holographic"] .kills-pager-active {
+  background: color-mix(in srgb, var(--accent) 18%, var(--deck-plate));
+  border-color: var(--accent);
+  box-shadow: 0 0 calc(12px * var(--fx-glow-k, 1)) var(--accent-soft), inset 0 0 12px var(--accent-soft);
+}
+
+:root[data-theme="holographic"] button:disabled {
+  filter: grayscale(0.5) brightness(0.7);
+}
+
+/* ---- Wells and fields: no inner shadow, a thin lit edge on focus ---- */
+:root[data-theme="holographic"] input[type="text"],
+:root[data-theme="holographic"] input[type="number"],
+:root[data-theme="holographic"] select {
+  background: color-mix(in srgb, var(--deck-cavity) 70%, transparent);
+  box-shadow: none;
+}
+
+:root[data-theme="holographic"] input[type="text"]:focus,
+:root[data-theme="holographic"] input[type="number"]:focus,
+:root[data-theme="holographic"] select:focus {
+  box-shadow: 0 0 calc(10px * var(--fx-glow-k, 1)) var(--accent-soft);
+}
+
+/* ---- Instrument chips in the topbar: transparent glass with a hairline ---- */
+:root[data-theme="holographic"] .location-tracker-current,
+:root[data-theme="holographic"] .location-tracker-search,
+:root[data-theme="holographic"] .server-status-badge,
+:root[data-theme="holographic"] .capsuleers-online-badge,
+:root[data-theme="holographic"] .account-trigger,
+:root[data-theme="holographic"] .eve-time-clock,
+:root[data-theme="holographic"] .notification-bell-trigger {
+  background: color-mix(in srgb, var(--deck-cavity) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--deck-frame));
+  box-shadow: none;
+}
+
+:root[data-theme="holographic"] .topbar {
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, var(--deck-frame));
+  box-shadow: 0 1px 0 var(--accent-soft);
+}
+
+/* ---- Housings, annunciators and toasts: thin edges, no frame weight ---- */
+:root[data-theme="holographic"] .screen-housing {
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--deck-frame));
+  box-shadow: none;
+}
+
+:root[data-theme="holographic"] .screen-housing-title,
+:root[data-theme="holographic"] .screen-housing-display {
+  background: color-mix(in srgb, var(--deck-cavity) 75%, transparent);
+}
+
+:root[data-theme="holographic"] .annunciator {
+  background: color-mix(in srgb, var(--deck-cavity) 60%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 25%, var(--deck-frame));
+}
+
+/* ---- Page headers: one cyan hairline underneath ---- */
+:root[data-theme="holographic"] .dashboard-header,
+:root[data-theme="holographic"] .entity-stats-header,
+:root[data-theme="holographic"] .detail-panel-header,
+:root[data-theme="holographic"] .industry-build-steps-header,
+:root[data-theme="holographic"] .kills-header,
+:root[data-theme="holographic"] .wallet-market-header,
+:root[data-theme="holographic"] .pi-header,
+:root[data-theme="holographic"] .wh-page-header,
+:root[data-theme="holographic"] .fittings-page-header,
+:root[data-theme="holographic"] .calendar-page-header,
+:root[data-theme="holographic"] .mail-page-header,
+:root[data-theme="holographic"] .settings-header,
+:root[data-theme="holographic"] .map-page-header {
+  border-bottom: 1px solid var(--accent);
+  box-shadow: 0 1px calc(10px * var(--fx-glow-k, 1)) -4px var(--accent);
+}
+
+:root[data-theme="holographic"] .market-stat-card {
+  border-top: 1px solid var(--accent);
+  box-shadow: none;
+}
+
+:root[data-theme="holographic"] .brand-divider {
+  height: 1px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+}
+
+:root[data-theme="holographic"] .sidebar {
+  border-right: 1px solid color-mix(in srgb, var(--accent) 30%, var(--deck-frame));
+  box-shadow: none;
+}
+
+/* Boot label - the ignition flash text. */
+:root[data-theme="holographic"] .main::before {
+  content: "OPTIC LINK \2014  CLEAR";
+}
+
+/* Signature atmosphere - a faint cyan glow falling from the top of the screen,
+   no raster and no vignette. Scales with the CRT setting. */
+:root[data-theme="holographic"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% -8%, rgba(61, 225, 255, calc(0.1 * var(--fx-crt-k, 1))), transparent 55%);
+}

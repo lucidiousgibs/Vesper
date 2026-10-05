@@ -163,7 +163,7 @@ function TrackedEntitiesPanel({
                 aria-label={`Stop tracking ${e.entity_name}`}
                 title="Stop tracking"
               >
-                <X size={13} strokeWidth={2.5} />
+                <X size={13} strokeWidth={2.5} className="icon-danger" />
               </button>
               <img
                 className={`tracked-entity-card-image${e.kind !== "character" ? " tracked-entity-card-image-square" : ""}`}

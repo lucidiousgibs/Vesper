@@ -16,6 +16,10 @@ import {
 import { getSystemKillHeat, type SystemKillHeat } from "../../lib/kills";
 import { planGateCheck, getGateActivity } from "../../lib/route";
 import { useErrorReporter } from "../../hooks/useErrorReporter";
+import { useTheme, isPremiumTheme } from "../../hooks/useTheme";
+import SegmentBar, { type SegmentBand } from "../premium/SegmentBar";
+import ProgressArc from "../premium/ProgressArc";
+import { MAX_COOLDOWN_MINUTES, MAX_FATIGUE_MINUTES } from "../../lib/capitalRoute";
 
 interface CapitalRoutePanelProps {
   characters: SessionCharacter[];
@@ -154,7 +158,17 @@ function formatMinutes(mins: number): string {
   return `${m}m ${s.toString().padStart(2, "0")}s`;
 }
 
+/** Fatigue bar zones, as a share of the 300-minute cap: under 40% is fine, under 80% is a
+ * lot, and past that the next jump's cooldown is already near its maximum. */
+const FATIGUE_BANDS: SegmentBand[] = [
+  { upTo: MAX_FATIGUE_MINUTES * 0.4, tone: "ok" },
+  { upTo: MAX_FATIGUE_MINUTES * 0.8, tone: "caution" },
+  { upTo: MAX_FATIGUE_MINUTES, tone: "critical" },
+];
+
 function CapitalRoutePanel({ characters, onClose }: CapitalRoutePanelProps) {
+  const [theme] = useTheme();
+  const premium = isPremiumTheme(theme);
   const [ship, setShip] = useState<TypeSearchMatch | null>(null);
   const [jumpInfo, setJumpInfo] = useState<JumpDriveInfo | null>(null);
   const [checkedShip, setCheckedShip] = useState(false);
@@ -347,7 +361,7 @@ function CapitalRoutePanel({ characters, onClose }: CapitalRoutePanelProps) {
             }}
             title="Clear ship"
           >
-            <X size={12} strokeWidth={2.5} />
+            <X size={12} strokeWidth={2.5} className="icon-danger" />
           </button>
         </div>
       )}
@@ -403,7 +417,7 @@ function CapitalRoutePanel({ characters, onClose }: CapitalRoutePanelProps) {
                 <div className="capital-route-ship-picked">
                   <span>From: {originSystem.name}</span>
                   <button type="button" className="fittings-ship-clear-btn" onClick={() => setOriginSystem(null)} title="Clear origin">
-                    <X size={12} strokeWidth={2.5} />
+                    <X size={12} strokeWidth={2.5} className="icon-danger" />
                   </button>
                 </div>
               )}
@@ -422,7 +436,7 @@ function CapitalRoutePanel({ characters, onClose }: CapitalRoutePanelProps) {
                     onClick={() => setDestinationSystem(null)}
                     title="Clear destination"
                   >
-                    <X size={12} strokeWidth={2.5} />
+                    <X size={12} strokeWidth={2.5} className="icon-danger" />
                   </button>
                 </div>
               )}
@@ -500,6 +514,26 @@ function CapitalRoutePanel({ characters, onClose }: CapitalRoutePanelProps) {
                   {leg.distanceLy.toFixed(2)} LY &middot; {leg.fuelUnits.toFixed(0)} {fuelTypeName} &middot;{" "}
                   {formatMinutes(leg.cooldownMinutes)} cooldown &middot; fatigue {formatMinutes(leg.fatigueAfterMinutes)}
                 </p>
+                {premium && (
+                  <div className="capital-route-leg-gauges">
+                    <ProgressArc
+                      value={leg.cooldownMinutes}
+                      max={MAX_COOLDOWN_MINUTES}
+                      label="Jump cooldown after this leg"
+                      valueText={`${formatMinutes(leg.cooldownMinutes)} of a possible ${MAX_COOLDOWN_MINUTES} minutes`}
+                    />
+                    <span className="capital-route-gauge-label">Cooldown</span>
+                    <SegmentBar
+                      value={leg.fatigueAfterMinutes}
+                      max={MAX_FATIGUE_MINUTES}
+                      bands={FATIGUE_BANDS}
+                      segments={12}
+                      label="Jump fatigue after this leg"
+                      valueText={`${formatMinutes(leg.fatigueAfterMinutes)} of a possible ${formatMinutes(MAX_FATIGUE_MINUTES)}`}
+                    />
+                    <span className="capital-route-gauge-label">Fatigue</span>
+                  </div>
+                )}
               </div>
             ))}
           </div>

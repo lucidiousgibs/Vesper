@@ -12,9 +12,27 @@ export type ThemeId =
   | "bulkhead"
   | "cold-ballast"
   | "command-deck"
-  | "amber-exchange";
+  | "amber-exchange"
+  | "phosphor-green"
+  | "holographic"
+  | "tactical"
+  | "amber-command"
+  | "cybernetic"
+  | "mecha-alert"
+  | "deep-space"
+  | "cyber-neon"
+  | "corporate-future"
+  | "biotech"
+  | "mecha-90"
+  | "white-phosphor"
+  | "cassette-deck";
 
-export const THEMES: { id: ThemeId; label: string; description: string; tier?: "premium" }[] = [
+/** Optional geometry family a premium deck shares rules with (stamped on <html> as
+ * data-family): premium-glass.css or premium-terminal.css. Decks with no family ride the
+ * shared premium hardware structure directly. */
+export type ThemeFamily = "glass" | "terminal";
+
+export const THEMES: { id: ThemeId; label: string; description: string; tier?: "premium"; family?: ThemeFamily; segmentClock?: boolean }[] = [
   { id: "dark", label: "Dark (default)", description: "VESPER's original dark navy/cyan look." },
   { id: "light", label: "Light", description: "A bright counterpart to the default theme." },
   { id: "anime", label: "Analog Signal", description: "Warm cream, indigo panels, and dusty rose - old cel-animation film tones." },
@@ -45,6 +63,104 @@ export const THEMES: { id: ThemeId; label: string; description: string; tier?: "
     label: "Amber Exchange",
     description: "A trading-floor ticker desk - brass and bronze fittings, amber exchange-floor light, and gains/losses that glow the moment they move.",
     tier: "premium",
+  },
+  {
+    id: "holographic",
+    label: "Holographic",
+    description: "Black glass and light - no hardware plates: glass buttons that light on hover, thin cyan edges, and a faint glow falling from the top of the screen. The cyan-led deck without the raster.",
+    tier: "premium",
+  },
+  {
+    id: "phosphor-green",
+    label: "Phosphor Green",
+    description: "A ship's green-phosphor terminal - black glass, monospace labels, shell-prompt page titles with a block cursor, and a thin scan raster. Scanlines, glow, grain and flicker are all adjustable in Settings > Display > Effects.",
+    tier: "premium",
+  },
+  {
+    id: "tactical",
+    label: "Capsuleer Tactical",
+    description:
+      "A field display - black and olive plates with amber and a muted teal, flat matte hardware, range rings on the map and a TGT tag on every page title.",
+    tier: "premium",
+  },
+  {
+    id: "amber-command",
+    label: "Amber Command",
+    description:
+      "A 1970s space console - amber phosphor on black, double-line frames, a shell prompt on every title and a scan raster. Easy on the eyes at night.",
+    tier: "premium",
+    family: "terminal",
+    segmentClock: true,
+  },
+  {
+    id: "cybernetic",
+    label: "Cybernetic",
+    description:
+      "Diagnostics and augmentation - gold-amber over dark steel with a cyan scan edge, angled bold outlines and soft glow.",
+    tier: "premium",
+    family: "glass",
+  },
+  {
+    id: "mecha-alert",
+    label: "Mecha Command Alert",
+    description:
+      "A command centre built around alerts - alarm orange, hazard-stripe bands under every title, heavy frames and hard cuts between pages.",
+    tier: "premium",
+  },
+  {
+    id: "deep-space",
+    label: "Deep Space",
+    description:
+      "A ship at night - very dark, sparse cool light, hairline edges, a faint star field and almost no chrome.",
+    tier: "premium",
+    family: "glass",
+  },
+  {
+    id: "cyber-neon",
+    label: "Cyberpunk Neon",
+    description:
+      "Neon on black - cyan data, violet depth and magenta kept to the edges, with a short glitch when you change page. Loud by design.",
+    tier: "premium",
+    family: "glass",
+  },
+  {
+    id: "corporate-future",
+    label: "Corporate Future",
+    description:
+      "Faction-HQ polish - dark navy, clean white and pale cyan, rounded cards and soft shadows, no hardware.",
+    tier: "premium",
+    family: "glass",
+  },
+  {
+    id: "biotech",
+    label: "Alien Biotech",
+    description:
+      "Wet, cold and slightly wrong - pale organic green and acid yellow, irregular curves and a slow breathing mist. Suits wormhole space.",
+    tier: "premium",
+    family: "glass",
+  },
+  {
+    id: "mecha-90",
+    label: "90s Mecha",
+    description:
+      "Cockpit displays - pale green data with orange and red status, double-line schematic frames and square tags on every title.",
+    tier: "premium",
+  },
+  {
+    id: "white-phosphor",
+    label: "White Phosphor",
+    description:
+      "Monochrome and austere - off-white on charcoal, thin single lines, no fills, monospace throughout. The most readable of the terminal decks.",
+    tier: "premium",
+    family: "terminal",
+  },
+  {
+    id: "cassette-deck",
+    label: "Cassette Deck",
+    description:
+      "A heavy modular console - green and amber phosphor over charcoal with olive and beige hardware, embossed label strips and a tape-counter clock.",
+    tier: "premium",
+    segmentClock: true,
   },
 ];
 
@@ -103,6 +219,7 @@ export function useTheme() {
     // a standard theme - an empty string removes any prior match instead of
     // a dangling data-tier="premium" attribute standard themes never look at.
     document.documentElement.dataset.tier = isPremiumTheme(theme) ? "premium" : "";
+    document.documentElement.dataset.family = THEMES.find((t) => t.id === theme)?.family ?? "";
   }, [theme]);
 
   useEffect(() => {

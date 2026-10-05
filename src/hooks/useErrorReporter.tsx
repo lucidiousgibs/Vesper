@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import errorIcon from "../assets/sidebar-icons/error.png";
 import { useTheme, isPremiumTheme } from "./useTheme";
+import { logEvent } from "../lib/eventLog";
+import { playCue } from "../lib/cues";
 
 type ReportError = (message: string) => void;
 
@@ -40,6 +42,10 @@ export function ErrorReporterProvider({ children }: ErrorReporterProviderProps) 
 
   const reportError = useCallback((msg: string) => {
     console.error(msg);
+    // Also kept in the event log, which the premium SYS health lamp (and later a log
+    // panel) read: every error a user sees is a real fault worth counting.
+    logEvent("error", "SYS", msg);
+    playCue("warn");
     setMessage(msg);
   }, []);
 

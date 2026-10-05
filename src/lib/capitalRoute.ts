@@ -38,8 +38,8 @@ export const METERS_PER_LY = 9.4607e15;
 export const JUMP_DRIVE_CALIBRATION_SKILL_ID = 21611;
 export const JUMP_FUEL_CONSERVATION_SKILL_ID = 21610;
 
-const MAX_COOLDOWN_MINUTES = 30;
-const MAX_FATIGUE_MINUTES = 300;
+export const MAX_COOLDOWN_MINUTES = 30;
+export const MAX_FATIGUE_MINUTES = 300;
 
 /** The four jump-fuel isotopes - every jump-capable hull burns exactly one
  * of these, keyed by faction (verified live via ESI's /universe/ids/). Only

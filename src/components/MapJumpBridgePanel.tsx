@@ -54,7 +54,7 @@ function SystemPickBox({
       <div className="capital-route-ship-picked">
         <span>{picked.name}</span>
         <button type="button" className="fittings-ship-clear-btn" onClick={onClear} title="Clear">
-          <X size={12} strokeWidth={2.5} />
+          <X size={12} strokeWidth={2.5} className="icon-danger" />
         </button>
       </div>
     );

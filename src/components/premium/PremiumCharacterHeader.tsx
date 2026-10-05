@@ -74,8 +74,8 @@ function PremiumCharacterHeader({ character, overview, attributes, reconnecting,
         {/* Amber ("attention") while overview is still null/loading - not a
            false green "no reauth needed" or false amber "not training"
            before the fetch has actually answered either question. */}
-        <Annunciator label="Training" state={overview == null ? "attention" : overview.training_skill_name ? "on" : "attention"} />
-        <Annunciator label="Reauth" state={overview == null ? "attention" : overview.needs_reauth ? "danger" : "on"} />
+        <Annunciator label="Training" state={overview == null ? "attention" : overview.training_skill_name ? "calm" : "attention"} />
+        <Annunciator label="Reauth" state={overview == null ? "attention" : overview.needs_reauth ? "danger" : "calm"} />
       </div>
 
       {overview?.training_skill_name && (

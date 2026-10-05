@@ -2,6 +2,9 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import type { CharacterOverview, SessionCharacter } from "../lib/eve";
 import { formatIsk, formatSp, formatTimeRemaining, formatQueueSummary } from "../lib/format";
 import CloneStateBadge from "./CloneStateBadge";
+import StatusLamp from "./premium/StatusLamp";
+import RollingNumber from "./premium/RollingNumber";
+import { useTheme, isPremiumTheme } from "../hooks/useTheme";
 
 interface CharacterCardProps {
   character: SessionCharacter;
@@ -34,6 +37,8 @@ function CharacterCard({
   dragging,
 }: CharacterCardProps) {
   const loading = overview === undefined;
+  const [theme] = useTheme();
+  const premium = isPremiumTheme(theme);
 
   return (
     <div
@@ -63,6 +68,20 @@ function CharacterCard({
             {overview?.corporation_name ?? "—"}
             {overview?.alliance_name ? ` • ${overview.alliance_name}` : ""}
           </span>
+          {premium && !loading && overview && (
+            <span className="character-card-state">
+              {/* One light per pilot: quiet grey while training, amber when the queue is
+                  idle, red (and acknowledgeable) when the sign-in has lapsed. */}
+              <StatusLamp
+                tone={overview.needs_reauth ? "danger" : overview.training_skill_name ? "neutral" : "attention"}
+                lit
+                blink={overview.needs_reauth}
+                ackKey={`pilot:${character.id}`}
+                className={!overview.needs_reauth && overview.training_skill_name ? "status-lamp-calm" : undefined}
+              />
+              <span>{overview.needs_reauth ? "Re-auth needed" : overview.training_skill_name ? "Training" : "Queue idle"}</span>
+            </span>
+          )}
         </div>
       </div>
 
@@ -84,10 +103,10 @@ function CharacterCard({
       ) : (
         <div className="character-card-stats">
           <div className="character-card-isk">
-            {loading ? "—" : overview?.isk_balance != null ? formatIsk(overview.isk_balance) : "—"}
+            {loading ? "—" : overview?.isk_balance != null ? <RollingNumber id={`isk-${character.id}`} value={overview.isk_balance} format={formatIsk} /> : "—"}
           </div>
           <div className="character-card-sp">
-            {loading ? "—" : overview?.total_sp != null ? formatSp(overview.total_sp) : "—"}
+            {loading ? "—" : overview?.total_sp != null ? <RollingNumber id={`sp-${character.id}`} value={overview.total_sp} format={formatSp} /> : "—"}
           </div>
           <div className="character-card-training">
             {loading

@@ -161,9 +161,9 @@ function MarketHistoryChart({ points, days = 90 }: MarketHistoryChartProps) {
             ))}
 
             <polygon points={areaPoints} fill={`url(#market-history-fill-${instanceId})`} />
-            <polyline points={highPoints} className="market-history-line market-history-line-high" />
-            <polyline points={lowPoints} className="market-history-line market-history-line-low" />
-            <polyline points={avgPoints} className="market-history-line market-history-line-avg" />
+            <polyline points={highPoints} className="market-history-line market-history-line-high chart-trace" pathLength={1} />
+            <polyline points={lowPoints} className="market-history-line market-history-line-low chart-trace" pathLength={1} />
+            <polyline points={avgPoints} className="market-history-line market-history-line-avg chart-trace" pathLength={1} />
 
             {hovered && hoverIdx != null && (
               <line x1={toX(hoverIdx)} x2={toX(hoverIdx)} y1={PAD_TOP} y2={baseline} className="market-history-scanline" />

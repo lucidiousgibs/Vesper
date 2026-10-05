@@ -50,7 +50,7 @@ async fn authorized_get<T: DeserializeOwned>(
 ) -> Result<T, EsiError> {
     let mut attempt = 0;
     loop {
-        let response = match client.get(format!("{ESI_BASE}{path}")).bearer_auth(access_token).send().await {
+        let response = match crate::net_stats::counted(client.get(format!("{ESI_BASE}{path}")).bearer_auth(access_token)).await {
             Ok(r) => r,
             Err(e) => {
                 if retry_delay(attempt).await {
@@ -103,7 +103,7 @@ async fn authorized_get_paginated<T: DeserializeOwned>(
         let url = format!("{ESI_BASE}{path}{separator}page={page}");
         let mut attempt = 0;
         loop {
-            let response = match client.get(&url).bearer_auth(access_token).send().await {
+            let response = match crate::net_stats::counted(client.get(&url).bearer_auth(access_token)).await {
                 Ok(r) => r,
                 Err(e) => {
                     if retry_delay(attempt).await {
@@ -154,7 +154,7 @@ async fn authorized_get_paginated<T: DeserializeOwned>(
 pub(crate) async fn public_get<T: DeserializeOwned>(client: &reqwest::Client, path: &str) -> Result<T, String> {
     let mut attempt = 0;
     loop {
-        let response = match client.get(format!("{ESI_BASE}{path}")).send().await {
+        let response = match crate::net_stats::counted(client.get(format!("{ESI_BASE}{path}"))).await {
             Ok(r) => r,
             Err(e) => {
                 if retry_delay(attempt).await {
@@ -191,7 +191,7 @@ pub(crate) async fn public_get_paginated<T: DeserializeOwned>(client: &reqwest::
         let url = format!("{ESI_BASE}{path}{separator}page={page}");
         let mut attempt = 0;
         loop {
-            let response = match client.get(&url).send().await {
+            let response = match crate::net_stats::counted(client.get(&url)).await {
                 Ok(r) => r,
                 Err(e) => {
                     if retry_delay(attempt).await {
@@ -415,7 +415,7 @@ pub struct CharacterOverview {
 async fn resolve_names_chunk(client: &reqwest::Client, ids: &[i64]) -> HashMap<i64, String> {
     let mut attempt = 0;
     loop {
-        let result = client.post(format!("{ESI_BASE}/universe/names/")).json(ids).send().await;
+        let result = crate::net_stats::counted(client.post(format!("{ESI_BASE}/universe/names/")).json(ids)).await;
         let response = match result {
             Ok(r) => r,
             Err(_) => {
@@ -3636,7 +3636,7 @@ async fn authorized_post<B: Serialize + ?Sized, T: DeserializeOwned>(
 ) -> Result<T, EsiError> {
     let mut attempt = 0;
     loop {
-        let response = match client.post(format!("{ESI_BASE}{path}")).bearer_auth(access_token).json(body).send().await {
+        let response = match crate::net_stats::counted(client.post(format!("{ESI_BASE}{path}")).bearer_auth(access_token).json(body)).await {
             Ok(r) => r,
             Err(e) => {
                 if retry_delay(attempt).await {
@@ -3679,7 +3679,7 @@ async fn authorized_post_no_content(
     let mut attempt = 0;
     loop {
         let response =
-            match client.post(format!("{ESI_BASE}{path}")).bearer_auth(access_token).query(query).send().await {
+            match crate::net_stats::counted(client.post(format!("{ESI_BASE}{path}")).bearer_auth(access_token).query(query)).await {
                 Ok(r) => r,
                 Err(e) => {
                     if retry_delay(attempt).await {

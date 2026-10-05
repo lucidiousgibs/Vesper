@@ -1,4 +1,5 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useRef, type ReactNode } from "react";
+import { useTheme, isPremiumTheme } from "./useTheme";
 import { usePersistentState } from "./usePersistentState";
 import { useNotificationSoundVolume } from "./useNotificationSoundVolume";
 import { playNotificationPing } from "../lib/sound";
@@ -7,6 +8,9 @@ const STORAGE_KEY = "vesper.notificationCenter";
 /** Bounds how many notifications pile up in localStorage - old ones fall off
  * the end rather than growing forever across a long-running session. */
 const MAX_NOTIFICATIONS = 100;
+/** Under a premium deck a burst of notifications plays one ping, not one per
+ * item. Every notification is still recorded; only the sound is limited. */
+const PING_MIN_INTERVAL_MS = 3_000;
 
 export interface NotificationItem {
   id: string;
@@ -72,6 +76,9 @@ export function useNotificationCenter(): NotificationCenterState {
 export function NotificationCenterProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = usePersistentState<NotificationItem[]>(STORAGE_KEY, []);
   const [notificationVolume] = useNotificationSoundVolume();
+  const [theme] = useTheme();
+  const premium = isPremiumTheme(theme);
+  const lastPingAtRef = useRef(0);
 
   function addNotification(
     title: string,
@@ -93,7 +100,11 @@ export function NotificationCenterProvider({ children }: { children: ReactNode }
       read: false,
     };
     setNotifications((prev) => [item, ...prev].slice(0, MAX_NOTIFICATIONS));
-    playNotificationPing(notificationVolume);
+    const now = Date.now();
+    if (!premium || now - lastPingAtRef.current >= PING_MIN_INTERVAL_MS) {
+      lastPingAtRef.current = now;
+      playNotificationPing(notificationVolume);
+    }
   }
 
   function markRead(id: string) {

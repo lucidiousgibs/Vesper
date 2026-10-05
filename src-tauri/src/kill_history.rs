@@ -1342,7 +1342,15 @@ pub struct LikelyGateCamp {
     pub kills_last_hour: i64,
     pub pods_last_hour: i64,
     pub last_kill_time: String,
+    /// Kills per ten-minute slice of the last hour, oldest first (so the last
+    /// entry is the most recent ten minutes). Counted from each kill's own
+    /// timestamp, so the six values always add up to kills_last_hour except for
+    /// a kill whose timestamp could not be parsed.
+    pub kills_by_10min: Vec<i64>,
 }
+
+/// How many ten-minute slices the sparkline on the Likely Gate Camps board shows.
+const LIKELY_CAMPS_BINS: usize = 6;
 
 struct RawLikelyCampKill {
     solar_system_id: i64,
@@ -1362,6 +1370,7 @@ struct LikelyCampAgg {
     kills: i64,
     pods: i64,
     last_kill_time: String,
+    bins: [i64; LIKELY_CAMPS_BINS],
 }
 
 /// New Eden-wide "what's likely camped right now" board, matching
@@ -1444,6 +1453,7 @@ pub async fn get_likely_gate_camps(app: tauri::AppHandle, client: reqwest::Clien
     // the gate's own ESI stargate id - a kill that isn't within range of
     // any gate in its system simply isn't a gate-camp kill and is dropped,
     // the same as GateCheck's own attribution.
+    let now = Utc::now();
     let mut by_gate: HashMap<i64, LikelyCampAgg> = HashMap::new();
     for row in &rows {
         let gates = gates_by_system.get(&row.solar_system_id).map(Vec::as_slice).unwrap_or(&[]);
@@ -1457,10 +1467,17 @@ pub async fn get_likely_gate_camps(app: tauri::AppHandle, client: reqwest::Clien
             kills: 0,
             pods: 0,
             last_kill_time: row.killmail_time.clone(),
+            bins: [0; LIKELY_CAMPS_BINS],
         });
         entry.kills += 1;
         if row.ship_group_id == CAPSULE_GROUP_ID {
             entry.pods += 1;
+        }
+        // Slice 0 is the most recent ten minutes; stored oldest first below.
+        if let Some(t) = parse_kill_time(&row.killmail_time) {
+            let minutes_ago = (now - t).num_minutes().max(0);
+            let slice = ((minutes_ago / 10) as usize).min(LIKELY_CAMPS_BINS - 1);
+            entry.bins[LIKELY_CAMPS_BINS - 1 - slice] += 1;
         }
         // ISO 8601 timestamps sort lexicographically the same as
         // chronologically, so a plain string comparison is a valid max().
@@ -1491,6 +1508,7 @@ pub async fn get_likely_gate_camps(app: tauri::AppHandle, client: reqwest::Clien
                 kills_last_hour: agg.kills,
                 pods_last_hour: agg.pods,
                 last_kill_time: agg.last_kill_time,
+                kills_by_10min: agg.bins.to_vec(),
             }
         }
     }))
@@ -1500,6 +1518,43 @@ pub async fn get_likely_gate_camps(app: tauri::AppHandle, client: reqwest::Clien
 }
 
 const SYSTEM_HEAT_WINDOW_MINUTES: i64 = 60;
+
+/// Width of one slice of the New Eden-wide kill-rate trace, and how many slices cover the
+/// last hour (12 x 5 minutes).
+const KILL_RATE_SLICE_MINUTES: i64 = 5;
+const KILL_RATE_SLICES: usize = 12;
+
+/// Kills per five-minute slice across all of New Eden for the last hour, oldest first (the
+/// last entry is the most recent five minutes). Straight from the local kill store, which is
+/// fed by the same live stream as everything else, so it is the real rate of kills this app
+/// has recorded, nothing smoothed or invented. Backs the kill-rate trace in the top bar.
+pub async fn get_kill_rate_bins(app: tauri::AppHandle) -> Result<Vec<i64>, String> {
+    let path = db_path(&app)?;
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<i64>, String> {
+        let conn = open_db(&path)?;
+        ensure_schema(&conn)?;
+        let mut stmt = conn
+            .prepare("SELECT killmail_time FROM kill_history WHERE datetime(killmail_time) >= datetime('now', ?1)")
+            .map_err(|e| format!("failed to prepare kill-rate query: {e}"))?;
+        let window = format!("-{} minutes", KILL_RATE_SLICE_MINUTES * KILL_RATE_SLICES as i64);
+        let times = stmt
+            .query_map(rusqlite::params![window], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("failed to query kill rate: {e}"))?;
+
+        let now = Utc::now();
+        let mut bins = vec![0_i64; KILL_RATE_SLICES];
+        for time in times {
+            let text = time.map_err(|e| format!("failed to read kill-rate row: {e}"))?;
+            let Some(t) = parse_kill_time(&text) else { continue };
+            let minutes_ago = (now - t).num_minutes().max(0);
+            let slice = ((minutes_ago / KILL_RATE_SLICE_MINUTES) as usize).min(KILL_RATE_SLICES - 1);
+            bins[KILL_RATE_SLICES - 1 - slice] += 1;
+        }
+        Ok(bins)
+    })
+    .await
+    .map_err(|e| format!("kill-rate query task failed: {e}"))?
+}
 
 #[derive(Serialize, Clone)]
 pub struct SystemKillHeat {

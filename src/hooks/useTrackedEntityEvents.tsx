@@ -6,6 +6,8 @@ import { useNotificationCenter } from "./useNotificationCenter";
 import { useToast } from "./useToast";
 import { readNotificationPreferences } from "./useNotificationPreferences";
 import { notify } from "../lib/notifications";
+import { logEvent } from "../lib/eventLog";
+import { playCue } from "../lib/cues";
 
 function describe(e: TrackedEntityEvent): { title: string; message: string } {
   const who = e.tracked_entity_kind === "character" ? e.tracked_entity_name : (e.subject_character_name ?? e.tracked_entity_name);
@@ -42,7 +44,10 @@ export function useTrackedEntityEvents() {
     const unlistenPromise = listen<TrackedEntityEvent>("tracked-player-event", (e) => {
       const { title, message } = describe(e.payload);
       addNotification(title, message, undefined, e.payload.killmail_id, e.payload.event === "died" ? "death" : "kill");
-      showToast(title, message);
+      // A tracked character or corp losing a ship is the critical tier; a kill is normal.
+      showToast(title, message, e.payload.event === "died" ? "critical" : "normal");
+      logEvent(e.payload.event === "died" ? "warn" : "info", "KILL", `${title} - ${message}`);
+      playCue("kill");
       const prefs = readNotificationPreferences();
       if (prefs.enabled && prefs.trackedPlayerKills) {
         notify(title, message);

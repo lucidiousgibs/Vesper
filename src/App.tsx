@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from "react";
 import Sidebar, { NAV_ITEMS } from "./components/Sidebar";
 import TopBar from "./components/TopBar";
 import MainContent from "./components/MainContent";
@@ -39,9 +39,14 @@ import { CharacterLocationProvider } from "./hooks/useCharacterLocation";
 import { ChainAutoMappingEffect } from "./hooks/useChainAutoMapping";
 import { SkillQueueWatchEffect } from "./hooks/useSkillQueueWatch";
 import { TrackedEntityEventsEffect } from "./hooks/useTrackedEntityEvents";
+import { TrackedGateCampWatchEffect } from "./hooks/useTrackedGateCampWatch";
 import ToastStack from "./components/ToastStack";
+import CommandPalette from "./components/premium/CommandPalette";
+import SystemLogPanel from "./components/premium/SystemLogPanel";
+import BootSequence from "./components/premium/BootSequence";
+import { logEvent } from "./lib/eventLog";
 import { useDefaultLandingTab } from "./hooks/useDefaultLandingTab";
-import { useReduceMotion } from "./hooks/useReduceMotion";
+import { useEffectsApplier } from "./hooks/useEffects";
 import { useTheme } from "./hooks/useTheme";
 import { splitFavouriteId } from "./lib/subTabs";
 import "./App.css";
@@ -65,10 +70,25 @@ import "./themes/premium/bulkhead.css";
 import "./themes/premium/cold-ballast.css";
 import "./themes/premium/command-deck.css";
 import "./themes/premium/amber-exchange.css";
+import "./themes/premium/phosphor-green.css";
+import "./themes/premium/holographic.css";
+import "./themes/premium/premium-tokens-extra.css";
+import "./themes/premium/premium-glass.css";
+import "./themes/premium/premium-terminal.css";
+import "./themes/premium/premium-decks-extra.css";
+// The Effects settings as CSS (intensity variables, animation gates, grain). Last, so
+// its gates win over the per-deck rules above.
+import "./themes/premium/premium-fx.css";
+// Signal tiers (feed rows, critical and flood toasts) under a premium deck.
+import "./themes/premium/premium-signal.css";
+
+let startLogged = false;
+/** Pages opened so far this session, for the first-open panel boot-up. */
+const visitedPages = new Set<string>();
 
 function App() {
   const [activeId, setActiveId] = useDefaultLandingTab(NAV_ITEMS[0].id);
-  useReduceMotion();
+  useEffectsApplier();
   useTheme();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,8 +126,28 @@ function App() {
     setActiveSubTab(null);
   }, [activeId]);
 
+  // First open of a page this session: stamp a short-lived attribute so a premium deck
+  // can stage the page's panels in (see premium-signal.css). A layout effect, so the
+  // attribute is on the document before the page's first paint and nothing flashes.
+  useLayoutEffect(() => {
+    if (visitedPages.has(activeId)) return;
+    visitedPages.add(activeId);
+    const root = document.documentElement;
+    root.dataset.firstOpen = "true";
+    const timer = window.setTimeout(() => delete root.dataset.firstOpen, 1000);
+    return () => {
+      window.clearTimeout(timer);
+      delete root.dataset.firstOpen;
+    };
+  }, [activeId]);
+
   useEffect(() => {
     refreshSession();
+    // Dev builds run effects twice under StrictMode; log the start once.
+    if (!startLogged) {
+      startLogged = true;
+      logEvent("info", "SYS", "VESPER started");
+    }
   }, []);
 
   async function refreshSession() {
@@ -160,6 +200,8 @@ function App() {
 
   async function handleSwitch(id: number) {
     await setActiveCharacter(id);
+    const name = session?.characters.find((c) => c.id === id)?.name;
+    logEvent("info", "SYS", name ? `Switched active character to ${name}` : "Switched active character");
     refreshSession();
   }
 
@@ -235,11 +277,25 @@ function App() {
       />
       <SkillQueueWatchEffect characters={session.characters} />
       <TrackedEntityEventsEffect />
+      <TrackedGateCampWatchEffect />
       <div className="shell">
         <ProximityFlashOverlay />
         <UpdateBanner onPreviewUpdate={whatsNew.preview} />
         <WhatsNewModal entry={whatsNew.entry} open={whatsNew.open} onClose={whatsNew.close} />
         <ToastStack />
+        <BootSequence
+          characterName={session.characters.find((c) => c.id === session.active_character_id)?.name ?? null}
+          pilots={session.characters.map((c) => ({ id: c.id, name: c.name, portraitUrl: c.portrait_url }))}
+          activeId={session.active_character_id}
+        />
+        <SystemLogPanel />
+        <CommandPalette
+          characters={session.characters}
+          activeCharacterId={session.active_character_id}
+          onNavigate={handleSelectNav}
+          onOpenSystem={handleOpenSystemKills}
+          onSwitchCharacter={handleSwitch}
+        />
         <Sidebar activeId={activeId} activeSubTab={activeSubTab} onSelect={handleSelectNav} />
         <TopBar
           title={active.label}

@@ -1,0 +1,207 @@
+/* ============================================================================
+   PREMIUM FX - the Effects settings, as CSS
+   ============================================================================
+   useEffects.ts stamps the effective Effects settings on <html> as
+   data-fx-motion / -glow / -crt / -scan / -grain / -flicker. This file turns
+   them into:
+     1. intensity variables the existing premium rules multiply by
+        (--fx-glow-k, --fx-crt-k, --fx-scan-k, --fx-grain-k). 1 is exactly the
+        look each deck had before this system existed, 0 is off, 2 is stronger.
+     2. animation gates, so the ambient and decorative effects stop at the
+        right Motion level.
+     3. the new grain overlay.
+   Loaded after every other premium file so these rules win on specificity.
+   Nothing here reaches a standard theme: every selector is scoped to
+   :root[data-tier="premium"].
+
+   Motion levels
+     OFF  - the existing body[data-reduce-motion="true"] rules already stop
+            everything; useEffects keeps that attribute in step.
+     LOW  - stop the ambient/decorative loops below; keep warnings (lamp
+            blink, signal degrade), loading (scan-tick) and selection
+            (lock-on).
+     FULL - everything.
+   Flicker additionally needs the Flicker setting on.
+   ============================================================================ */
+
+:root {
+  --fx-glow-k: 1;
+  --fx-crt-k: 1;
+  --fx-scan-k: 1;
+  --fx-grain-k: 0;
+}
+:root[data-fx-glow="off"] { --fx-glow-k: 0; }
+:root[data-fx-glow="strong"] { --fx-glow-k: 2; }
+:root[data-fx-crt="off"] { --fx-crt-k: 0; }
+:root[data-fx-crt="full"] { --fx-crt-k: 2; }
+:root[data-fx-scan="off"] { --fx-scan-k: 0; }
+:root[data-fx-scan="high"] { --fx-scan-k: 2; }
+:root[data-fx-grain="low"] { --fx-grain-k: 1; }
+:root[data-fx-grain="high"] { --fx-grain-k: 2.4; }
+
+/* ---- Flicker: off when the setting is off, or whenever Motion is below Full ---- */
+:root[data-tier="premium"][data-fx-flicker="off"] .status-chip-value,
+:root[data-tier="premium"][data-fx-flicker="off"] .eve-time-value,
+:root[data-tier="premium"][data-fx-flicker="off"] .capsuleers-online-count,
+:root[data-tier="premium"][data-fx-flicker="off"] .market-stat-value,
+:root[data-tier="premium"][data-fx-flicker="off"] .industry-job-cost-value,
+:root[data-tier="premium"][data-fx-flicker="off"] .detail-stats-isk,
+:root[data-tier="premium"][data-fx-flicker="off"] .asset-total-value,
+:root[data-tier="premium"][data-fx-flicker="off"] .kill-stats-total,
+:root[data-tier="premium"][data-fx-flicker="off"] .kill-stats-destroyed,
+:root[data-tier="premium"][data-fx-flicker="off"] .kill-stats-dropped,
+:root[data-tier="premium"][data-fx-flicker="off"] .wallet-balance-card h2,
+:root[data-tier="premium"][data-fx-flicker="off"] .nav-item-active::before,
+:root[data-tier="premium"][data-fx-flicker="off"] .nav-item-channel,
+:root[data-tier="premium"][data-fx-flicker="off"] .technical-label,
+:root[data-tier="premium"][data-fx-flicker="off"] .telemetry-rail-value,
+:root[data-tier="premium"][data-fx-flicker="off"] .status-lamp-lit:not(.status-lamp-blink),
+:root[data-tier="premium"][data-fx-flicker="off"] .map-canvas-wrap,
+:root[data-tier="premium"][data-fx-flicker="off"] .map-hud-staticlines {
+  animation: none;
+}
+
+:root[data-tier="premium"][data-fx-motion="low"] .status-chip-value,
+:root[data-tier="premium"][data-fx-motion="low"] .eve-time-value,
+:root[data-tier="premium"][data-fx-motion="low"] .capsuleers-online-count,
+:root[data-tier="premium"][data-fx-motion="low"] .market-stat-value,
+:root[data-tier="premium"][data-fx-motion="low"] .industry-job-cost-value,
+:root[data-tier="premium"][data-fx-motion="low"] .detail-stats-isk,
+:root[data-tier="premium"][data-fx-motion="low"] .asset-total-value,
+:root[data-tier="premium"][data-fx-motion="low"] .kill-stats-total,
+:root[data-tier="premium"][data-fx-motion="low"] .kill-stats-destroyed,
+:root[data-tier="premium"][data-fx-motion="low"] .kill-stats-dropped,
+:root[data-tier="premium"][data-fx-motion="low"] .wallet-balance-card h2,
+:root[data-tier="premium"][data-fx-motion="low"] .nav-item-active::before,
+:root[data-tier="premium"][data-fx-motion="low"] .nav-item-channel,
+:root[data-tier="premium"][data-fx-motion="low"] .technical-label,
+:root[data-tier="premium"][data-fx-motion="low"] .telemetry-rail-value,
+:root[data-tier="premium"][data-fx-motion="low"] .status-lamp-lit:not(.status-lamp-blink),
+:root[data-tier="premium"][data-fx-motion="low"] .map-canvas-wrap,
+:root[data-tier="premium"][data-fx-motion="low"] .map-hud-staticlines {
+  animation: none;
+}
+
+/* ---- Decorative loops that stop below Motion Full ---- */
+:root[data-tier="premium"][data-fx-motion="low"] .main,
+:root[data-tier="premium"][data-fx-motion="low"] .main::before {
+  animation: none !important;
+}
+
+:root[data-tier="premium"][data-fx-motion="low"] .map-hud-scanroll,
+:root[data-tier="premium"][data-fx-crt="off"] .map-hud-scanroll,
+:root[data-tier="premium"][data-fx-crt="off"] .map-hud-staticlines {
+  display: none;
+}
+
+/* ---- Grain: a static noise texture over everything, under the toast and alert overlays ---- */
+:root[data-tier="premium"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 499;
+  pointer-events: none;
+  opacity: calc(0.05 * var(--fx-grain-k, 0));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+:root[data-fx-grain="off"] body::before {
+  display: none;
+}
+
+/* ============================================================================
+   FACTION ACCENT PACKS - Settings > Display > Effects > Faction accent
+   ============================================================================
+   Recolours a premium deck's accent in one of the four empires' colours. It sets
+   the accent token family, which the map also reads (MapView re-resolves its
+   colours when data-fx-faction changes). Contrast: each colour was chosen to sit
+   well on the dark decks' surfaces and to stay clear of the danger red. A few
+   surfaces with a hard-coded tint of their own keep it. */
+:root[data-tier="premium"][data-fx-faction="amarr"] {
+  --accent: #e3b448;
+  --accent-soft: rgba(227, 180, 72, 0.14);
+  --accent-contrast: #140e02;
+  --border-active: rgba(227, 180, 72, 0.5);
+  --glow-accent: 0 0 0 1px var(--border-active), 0 0 20px rgba(227, 180, 72, 0.28);
+}
+
+:root[data-tier="premium"][data-fx-faction="caldari"] {
+  --accent: #5fa8d6;
+  --accent-soft: rgba(95, 168, 214, 0.14);
+  --accent-contrast: #02101a;
+  --border-active: rgba(95, 168, 214, 0.5);
+  --glow-accent: 0 0 0 1px var(--border-active), 0 0 20px rgba(95, 168, 214, 0.28);
+}
+
+:root[data-tier="premium"][data-fx-faction="gallente"] {
+  --accent: #63c98a;
+  --accent-soft: rgba(99, 201, 138, 0.14);
+  --accent-contrast: #03120a;
+  --border-active: rgba(99, 201, 138, 0.5);
+  --glow-accent: 0 0 0 1px var(--border-active), 0 0 20px rgba(99, 201, 138, 0.28);
+}
+
+:root[data-tier="premium"][data-fx-faction="minmatar"] {
+  --accent: #d9743f;
+  --accent-soft: rgba(217, 116, 63, 0.14);
+  --accent-contrast: #1a0a02;
+  --border-active: rgba(217, 116, 63, 0.5);
+  --glow-accent: 0 0 0 1px var(--border-active), 0 0 20px rgba(217, 116, 63, 0.28);
+}
+
+/* ============================================================================
+   IMPERFECTION - Settings > Display > Effects > Imperfection
+   ============================================================================
+   Authentic: a faint red and cyan fringe on page titles, like a slightly
+   misconverged tube. Extreme: a stronger fringe, plus a slight shake on the map's
+   frame (the brackets and ruler ticks, never the map or any data). Extreme only
+   moves at Motion Full, and nothing here moves at Motion Off. */
+:root[data-tier="premium"]:is([data-fx-noise="authentic"], [data-fx-noise="extreme"])
+  :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  )
+  h2 {
+  text-shadow: -0.6px 0 rgba(255, 80, 80, 0.5), 0.6px 0 rgba(80, 200, 255, 0.5);
+}
+
+:root[data-tier="premium"][data-fx-noise="extreme"]
+  :is(
+    .dashboard-header,
+    .kills-header,
+    .wallet-market-header,
+    .pi-header,
+    .wh-page-header,
+    .fittings-page-header,
+    .calendar-page-header,
+    .mail-page-header,
+    .settings-header,
+    .map-page-header
+  )
+  h2 {
+  text-shadow: -1.3px 0 rgba(255, 80, 80, 0.7), 1.3px 0 rgba(80, 200, 255, 0.7);
+}
+
+:root[data-tier="premium"][data-fx-noise="extreme"][data-fx-motion="full"] .map-hud-frame {
+  animation: imperfection-shake 140ms steps(1) infinite;
+}
+
+@keyframes imperfection-shake {
+  0% {
+    transform: translate(0, 0);
+  }
+  33% {
+    transform: translate(0.6px, -0.4px);
+  }
+  66% {
+    transform: translate(-0.5px, 0.4px);
+  }
+}

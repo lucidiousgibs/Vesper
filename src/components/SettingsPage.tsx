@@ -14,8 +14,9 @@ import { useSoundVolume } from "../hooks/useSoundVolume";
 import { useNotificationSoundVolume } from "../hooks/useNotificationSoundVolume";
 import { useNotificationPreferences } from "../hooks/useNotificationPreferences";
 import { useDefaultTradeHub } from "../hooks/useDefaultTradeHub";
-import { useReduceMotion } from "../hooks/useReduceMotion";
-import { useTheme, THEMES } from "../hooks/useTheme";
+import { useEffects, FX_CONTROLS } from "../hooks/useEffects";
+import { playCue } from "../lib/cues";
+import { useTheme, THEMES, isPremiumTheme } from "../hooks/useTheme";
 import { useDefaultLandingTab } from "../hooks/useDefaultLandingTab";
 import { useColorOverrides } from "../hooks/useColorOverrides";
 import { useNavOrder } from "../hooks/useNavOrder";
@@ -57,8 +58,10 @@ function SettingsPage({ session, onAdd, onLogout }: SettingsPageProps) {
   const [testAlertSent, setTestAlertSent] = useState(false);
   const { prefs: notifPrefs, setEnabled: setNotifEnabled, update: updateNotifPrefs, permissionDenied } = useNotificationPreferences();
   const [hubRegionId, setHubRegionId] = useDefaultTradeHub();
-  const [reduceMotion, setReduceMotion] = useReduceMotion();
   const [theme, setTheme] = useTheme();
+  const { effective: fx, defaults: fxDefaults, customised: fxCustomised, setFx, resetFx } = useEffects();
+  const premiumTheme = isPremiumTheme(theme);
+  const osReducesMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const [landingTab, setLandingTab] = useDefaultLandingTab(NAV_ITEMS[0].id);
   const { resetAll: resetColors } = useColorOverrides("vesper.colors.sidebar");
   const { setOrder } = useNavOrder(NAV_ITEMS.map((item) => item.id));
@@ -487,10 +490,6 @@ function SettingsPage({ session, onAdd, onLogout }: SettingsPageProps) {
           <>
         <div className="settings-section">
           <h3>Display</h3>
-          <label className="settings-checkbox-row">
-            <input type="checkbox" checked={reduceMotion} onChange={(e) => setReduceMotion(e.target.checked)} />
-            Reduce motion (stops the skill-queue training pulse and the proximity-alert flash)
-          </label>
           <div className="settings-section-row">
             <span className="settings-inline-label">Color theme</span>
             <select className="industry-field-input settings-hub-select" value={theme} onChange={(e) => setTheme(e.target.value as typeof theme)}>
@@ -520,6 +519,57 @@ function SettingsPage({ session, onAdd, onLogout }: SettingsPageProps) {
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <h3>Effects</h3>
+          <p className="settings-section-hint">
+            Turn any atmospheric effect down or off. Motion applies everywhere; the rest shape the Premium themes
+            {premiumTheme ? "." : " and are available once a Premium theme is selected."} Starting points follow the
+            theme you pick, and anything you change here is kept.
+          </p>
+          {osReducesMotion && (
+            <p className="settings-section-hint">
+              Your system asks for reduced motion. Premium effects deliberately follow only the Motion setting below, so
+              set it to Low or Off if you want them quieter.
+            </p>
+          )}
+          {FX_CONTROLS.map((control) => {
+            const disabled = control.premiumOnly && !premiumTheme;
+            const changed = fx[control.key] !== fxDefaults[control.key];
+            return (
+              <div key={control.key}>
+                <div className="settings-section-row">
+                  <span className="settings-inline-label">{control.label}</span>
+                  <select
+                    className="industry-field-input settings-hub-select"
+                    value={fx[control.key]}
+                    disabled={disabled}
+                    onChange={(e) => setFx(control.key, e.target.value)}
+                  >
+                    {control.options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                        {o.value === fxDefaults[control.key] ? " (theme default)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {changed && <span className="multibox-settings-value">changed</span>}
+                </div>
+                <p className="settings-section-hint">{control.hint}</p>
+              </div>
+            );
+          })}
+          <div className="settings-section-row">
+            <button type="button" className="detail-back" onClick={resetFx} disabled={!fxCustomised}>
+              Reset effects to theme defaults
+            </button>
+            {premiumTheme && (
+              <button type="button" className="detail-back" onClick={() => playCue("confirm", { force: true })}>
+                Play a test cue
+              </button>
+            )}
           </div>
         </div>
 

@@ -17,6 +17,7 @@ mod map;
 mod map_scratchpad;
 mod market;
 mod multibox;
+mod net_stats;
 mod news;
 mod pi;
 mod route;
@@ -208,6 +209,8 @@ pub fn run() {
             commands::get_gate_activity,
             commands::get_likely_gate_camps,
             commands::get_system_kill_heat,
+            commands::get_kill_rate_bins,
+            commands::get_net_stats,
             commands::get_system_gates,
             commands::get_jump_counts,
             commands::get_item_categories,

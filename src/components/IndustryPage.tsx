@@ -1937,7 +1937,7 @@ function ProductionCalculator() {
                       aria-label={`Remove ${p.systemName} from saved systems`}
                       title="Remove from saved systems"
                     >
-                      <X size={12} strokeWidth={2.5} />
+                      <X size={12} strokeWidth={2.5} className="icon-danger" />
                     </button>
                   </div>
                 ))}

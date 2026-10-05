@@ -128,7 +128,7 @@ function HotkeyRecorder({ combo, onChange }: { combo: string | undefined; onChan
       </button>
       {combo && (
         <button type="button" className="multibox-hotkey-clear" onClick={() => onChange(null)} title="Clear hotkey">
-          <X size={12} strokeWidth={2} />
+          <X size={12} strokeWidth={2} className="icon-danger" />
         </button>
       )}
     </div>

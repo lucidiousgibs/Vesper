@@ -174,6 +174,18 @@ fn slot_type_for_effect(effect_id: i64) -> Option<&'static str> {
     }
 }
 
+/// The two dogma effects that make a high-slot module use a weapon hardpoint
+/// (turretFitted = 42, launcherFitted = 40), checked against ESI's
+/// /dogma/effects/{id}/ names rather than remembered. A module with neither
+/// (a salvager, a cloak, a repairer) is a "utility" high slot and uses none.
+fn hardpoint_for_effect(effect_id: i64) -> Option<&'static str> {
+    match effect_id {
+        42 => Some("turret"),
+        40 => Some("launcher"),
+        _ => None,
+    }
+}
+
 #[derive(Deserialize)]
 struct MetaTypeRow {
     #[serde(rename = "typeID")]
@@ -373,6 +385,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
     let _ = conn.execute("ALTER TABLE types ADD COLUMN ship_tree_group_id INTEGER", []);
     let _ = conn.execute("ALTER TABLE types ADD COLUMN faction_id INTEGER", []);
     let _ = conn.execute("ALTER TABLE types ADD COLUMN slot_type TEXT", []);
+    let _ = conn.execute("ALTER TABLE types ADD COLUMN hardpoint TEXT", []);
     let _ = conn.execute("ALTER TABLE types ADD COLUMN mass REAL NOT NULL DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE types ADD COLUMN portion_size INTEGER NOT NULL DEFAULT 1", []);
     Ok(())
@@ -401,6 +414,8 @@ fn needs_migration(conn: &rusqlite::Connection) -> bool {
         conn.query_row("SELECT COUNT(*) FROM item_categories", [], |row| row.get(0)).unwrap_or(0);
     let dgm_attribute_types_total: i64 =
         conn.query_row("SELECT COUNT(*) FROM dgm_attribute_types", [], |row| row.get(0)).unwrap_or(0);
+    let types_with_hardpoint: i64 =
+        conn.query_row("SELECT COUNT(*) FROM types WHERE hardpoint IS NOT NULL", [], |row| row.get(0)).unwrap_or(0);
     let types_with_null_market_group: i64 =
         conn.query_row("SELECT COUNT(*) FROM types WHERE market_group_id IS NULL", [], |row| row.get(0)).unwrap_or(0);
     (types_total > 0 && (types_with_volume == 0 || types_with_mass == 0))
@@ -411,6 +426,7 @@ fn needs_migration(conn: &rusqlite::Connection) -> bool {
         || (types_total > 0 && item_categories_total == 0)
         || (types_total > 0 && dgm_attribute_types_total == 0)
         || (types_total > 0 && types_with_null_market_group == 0)
+        || (types_total > 0 && types_with_hardpoint == 0)
 }
 
 /// Shared by every domain module (map, PI, market) that syncs its reference
@@ -454,6 +470,7 @@ fn import_market_data(
     // stored as its own table, since nothing else needs a type's full
     // effect list, just which of the 6 known slot-defining effects it has.
     let mut slot_type_by_type_id: HashMap<i64, &'static str> = HashMap::new();
+    let mut hardpoint_by_type_id: HashMap<i64, &'static str> = HashMap::new();
     {
         let mut reader = csv::Reader::from_reader(type_effects_csv.as_bytes());
         for result in reader.deserialize::<DgmTypeEffectRow>() {
@@ -461,14 +478,17 @@ fn import_market_data(
             if let Some(slot) = slot_type_for_effect(row.effect_id) {
                 slot_type_by_type_id.insert(row.type_id, slot);
             }
+            if let Some(hardpoint) = hardpoint_for_effect(row.effect_id) {
+                hardpoint_by_type_id.insert(row.type_id, hardpoint);
+            }
         }
     }
 
     {
         let mut stmt = tx
             .prepare(
-                "INSERT INTO types (id, name, market_group_id, volume, mass, portion_size, group_id, race_id, ship_tree_group_id, faction_id, slot_type) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                "INSERT INTO types (id, name, market_group_id, volume, mass, portion_size, group_id, race_id, ship_tree_group_id, faction_id, slot_type, hardpoint) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             )
             .map_err(|e| format!("failed to prepare types insert: {e}"))?;
         let mut reader = csv::Reader::from_reader(types_csv.as_bytes());
@@ -489,6 +509,7 @@ fn import_market_data(
                 row.ship_tree_group_id,
                 row.faction_id,
                 slot_type_by_type_id.get(&row.type_id).copied(),
+                hardpoint_by_type_id.get(&row.type_id).copied(),
             ]);
         }
     }
@@ -1211,6 +1232,10 @@ const ATTR_MED_SLOTS: i64 = 13;
 const ATTR_LOW_SLOTS: i64 = 12;
 const ATTR_RIG_SLOTS: i64 = 1137;
 const ATTR_SUBSYSTEM_SLOTS: i64 = 1367;
+/// Turret and launcher hardpoints a hull offers (turretSlotsLeft = 102,
+/// launcherSlotsLeft = 101), checked against ESI's /dogma/attributes names.
+const ATTR_TURRET_HARDPOINTS: i64 = 102;
+const ATTR_LAUNCHER_HARDPOINTS: i64 = 101;
 const ATTR_POWER_USED: i64 = 30;
 const ATTR_CPU_USED: i64 = 50;
 const ATTR_CALIBRATION_USED: i64 = 1153;
@@ -1229,6 +1254,8 @@ pub struct ShipStats {
     pub low_slots: i64,
     pub rig_slots: i64,
     pub subsystem_slots: i64,
+    pub turret_hardpoints: i64,
+    pub launcher_hardpoints: i64,
     pub power_output: f64,
     pub cpu_output: f64,
     pub calibration: f64,
@@ -1259,6 +1286,8 @@ pub async fn get_ship_stats(app: tauri::AppHandle, client: &reqwest::Client, typ
                 ATTR_LOW_SLOTS => stats.low_slots = value as i64,
                 ATTR_RIG_SLOTS => stats.rig_slots = value as i64,
                 ATTR_SUBSYSTEM_SLOTS => stats.subsystem_slots = value as i64,
+                ATTR_TURRET_HARDPOINTS => stats.turret_hardpoints = value as i64,
+                ATTR_LAUNCHER_HARDPOINTS => stats.launcher_hardpoints = value as i64,
                 ATTR_POWER_OUTPUT => stats.power_output = value,
                 ATTR_CPU_OUTPUT => stats.cpu_output = value,
                 ATTR_CALIBRATION => stats.calibration = value,
@@ -1280,6 +1309,8 @@ pub struct ItemResourceCost {
     pub calibration: f64,
     pub drone_bandwidth: f64,
     pub volume: f64,
+    /// "turret" or "launcher" for a module that uses a weapon hardpoint, else None.
+    pub hardpoint: Option<String>,
 }
 
 /// Bulk sibling for a whole fit's worth of items at once - same
@@ -1323,14 +1354,18 @@ pub async fn get_item_resource_costs(
             }
         }
 
-        let volume_sql = format!("SELECT id, volume FROM types WHERE id IN ({placeholders})");
+        let volume_sql = format!("SELECT id, volume, hardpoint FROM types WHERE id IN ({placeholders})");
         let mut stmt = conn.prepare(&volume_sql).map_err(|e| format!("failed to query item volumes: {e}"))?;
         let rows = stmt
-            .query_map(rusqlite::params_from_iter(type_ids.iter()), |row| Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?)))
+            .query_map(rusqlite::params_from_iter(type_ids.iter()), |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?, row.get::<_, Option<String>>(2)?))
+            })
             .map_err(|e| format!("failed to query item volumes: {e}"))?;
         for row in rows {
-            let (type_id, volume) = row.map_err(|e| format!("failed to read item volume row: {e}"))?;
-            results.entry(type_id).or_default().volume = volume;
+            let (type_id, volume, hardpoint) = row.map_err(|e| format!("failed to read item volume row: {e}"))?;
+            let entry = results.entry(type_id).or_default();
+            entry.volume = volume;
+            entry.hardpoint = hardpoint;
         }
 
         Ok(results)

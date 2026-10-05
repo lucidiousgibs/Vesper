@@ -4,7 +4,7 @@ import { getKillDetail, type KillDetail, type SlotGroup, type TrackedEntry } fro
 import { getMarketPrices } from "../lib/market";
 import { useErrorReporter } from "../hooks/useErrorReporter";
 import { formatIsk, formatSecurity, securityColor, formatPercent, formatEveDateTime } from "../lib/format";
-import FitWheel from "./FitWheel";
+import KillFittingDial from "./KillFittingDial";
 import type { SystemSummary } from "./SystemKillboard";
 import type { CorporationSummary } from "./CorporationKillboard";
 import type { AllianceSummary } from "./AllianceKillboard";
@@ -12,6 +12,7 @@ import type { MarketItemRef } from "./MarketBrowser";
 import type { GateSummary } from "./GateKillboard";
 import BackToMapButton from "./BackToMapButton";
 import TrackToggleButton from "./TrackToggleButton";
+import KillComponentHealth from "./premium/KillComponentHealth";
 
 /** Strips the "Stargate (X)" ESI wrapper down to the bare gate name, the
  * same display convention GateSummary/GateCheck already use. */
@@ -568,7 +569,8 @@ function KillDetailView({
 
             <div className="detail-panel">
               <p className="eyebrow">Fit</p>
-              <FitWheel shipTypeId={detail.ship_type_id} shipTypeName={detail.ship_type_name} items={detail.items} onSelectItem={onSelectItem} />
+              <KillFittingDial shipTypeId={detail.ship_type_id} shipTypeName={detail.ship_type_name} items={detail.items} onSelectItem={onSelectItem} />
+              <KillComponentHealth items={detail.items} />
             </div>
 
             {itemsByGroup.length > 0 && (

@@ -1,6 +1,8 @@
+import type { ReactNode } from "react";
+
 export interface TelemetryItem {
   label: string;
-  value: string;
+  value: ReactNode;
 }
 
 /** A horizontal strip of small labelled readouts - "N PILOTS", "TOTAL ISK"

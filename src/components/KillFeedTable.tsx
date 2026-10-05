@@ -1,10 +1,13 @@
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { CSSProperties, KeyboardEvent, MouseEvent } from "react";
 import { Check, X } from "lucide-react";
 import type { KillEntry } from "../lib/kills";
 import { formatIsk, formatExactTime, dateKey, formatDateHeading, formatSecurity, securityColor } from "../lib/format";
 import type { SystemSummary } from "./SystemKillboard";
 import type { CorporationSummary } from "./CorporationKillboard";
 import type { AllianceSummary } from "./AllianceKillboard";
+import { useTheme, isPremiumTheme } from "../hooks/useTheme";
+import { useNowCoarse } from "../hooks/useNow";
+import { killTier, rowAgeFactor } from "../lib/killTier";
 
 interface KillFeedTableProps {
   kills: KillEntry[];
@@ -57,6 +60,10 @@ function KillFeedTable({
   onSelectAlliance,
   outcomeFor,
 }: KillFeedTableProps) {
+  const [theme] = useTheme();
+  const premium = isPremiumTheme(theme);
+  const now = useNowCoarse(premium);
+
   function characterLinkProps(characterId: number | null) {
     if (!characterId) return {};
     return {
@@ -145,7 +152,8 @@ function KillFeedTable({
             return (
             <div
               key={kill.killmail_id}
-              className={`kills-row kills-row-clickable${outcome ? ` kills-row-outcome-${outcome}` : ""}`}
+              className={`kills-row kills-row-clickable kills-tier-${killTier(kill, outcome)}${outcome ? ` kills-row-outcome-${outcome}` : ""}`}
+              style={premium ? ({ "--row-age": rowAgeFactor(kill.time, now).toFixed(3) } as CSSProperties) : undefined}
               role="button"
               tabIndex={0}
               onClick={() => onSelectKill(kill.killmail_id)}
